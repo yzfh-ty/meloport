@@ -13,6 +13,14 @@
 .\bin\meloport.exe serve -config config.yaml
 ```
 
+开发前端时可以跳过手动构建：
+
+```powershell
+.\scripts\dev.ps1 -Action dev -Config config.yaml
+```
+
+该命令用 `go run` 启动本机服务，并从 `internal/webui/assets` 按请求读取 `index.html`、`app.css` 和 `app.js`。修改这三个文件后刷新浏览器即可看到结果；修改 Go 后停止并重新运行命令。开发资源目录仅在显式 `dev` 命令中启用，生产 `serve` 仍使用嵌入资源。
+
 打开 **http://127.0.0.1:8080/**。首次 `serve` 如果找不到配置文件，会创建仅含空任务列表的本地配置；**无需 Key 即可启动控制台**。已有配置不会被覆盖。
 
 网页提供任务新建／编辑／删除、启用开关、单任务或全部立即同步、歌单预览、平台歌曲检索、最近运行记录，以及全局时区／默认时间／音质／元数据回退设置。任务 ID 创建后保持不变；删除任务不删除音频、下载记录或历史。

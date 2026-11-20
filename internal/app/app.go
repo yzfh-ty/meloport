@@ -49,6 +49,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 	flags.SetOutput(io.Discard)
 	path := flags.String("config", "config.yaml", "configuration YAML path")
 	var taskID *string
+	var webDir *string
 	var limit *int
 	var searchPlatform, keyword *string
 	var offset *int
@@ -60,6 +61,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 		keyword = flags.String("keyword", "", "song title, artist or album query")
 		limit = flags.Int("limit", 20, "number of results, 1-50")
 		offset = flags.Int("offset", 0, "result offset")
+	}
+	if command == "serve" {
+		webDir = flags.String("web-dir", "", "serve live Web assets from this directory (development only)")
 	}
 	if command == "status" {
 		limit = flags.Int("limit", 20, "number of recent task runs, 1-1000")
@@ -202,7 +206,18 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 		}
 		return errors.Join(runErrors...)
 	}
-	return serve(ctx, cfg, selected, engine, store, logger, serviceOptions{ConfigPath: *path, Store: store, Metadata: metadata})
+	assetDirectory := ""
+	if webDir != nil && *webDir != "" {
+		assetDirectory = *webDir
+		if !filepath.IsAbs(assetDirectory) {
+			assetDirectory = filepath.Join(filepath.Dir(*path), assetDirectory)
+		}
+		assetDirectory, err = filepath.Abs(assetDirectory)
+		if err != nil {
+			return errors.New("invalid Web asset directory")
+		}
+	}
+	return serve(ctx, cfg, selected, engine, store, logger, serviceOptions{ConfigPath: *path, WebDir: assetDirectory, Store: store, Metadata: metadata})
 }
 
 func optionalEnv(name string) string {

@@ -1,7 +1,7 @@
 #requires -Version 5.1
 [CmdletBinding()]
 param(
-    [ValidateSet('build', 'test', 'validate', 'sync', 'serve', 'status')]
+    [ValidateSet('build', 'test', 'dev', 'validate', 'sync', 'serve', 'status')]
     [string]$Action = 'validate',
     [string]$Config = 'config.yaml',
     [string]$Task = ''
@@ -36,6 +36,12 @@ try {
     if ($Action -eq 'test') {
         Invoke-Go -GoArguments @('test', '-count=1', './...')
         Invoke-Go -GoArguments @('vet', './...')
+        return
+    }
+    if ($Action -eq 'dev') {
+        $liveAssets = Join-Path $projectRoot 'internal\webui\assets'
+        & go run ./cmd/meloport serve -config $Config -web-dir $liveAssets
+        if ($LASTEXITCODE -ne 0) { throw "meloport exited with code $LASTEXITCODE" }
         return
     }
     New-Item -ItemType Directory -Path (Join-Path $projectRoot 'bin') -Force | Out-Null

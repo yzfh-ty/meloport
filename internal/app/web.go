@@ -28,6 +28,7 @@ import (
 
 type serviceOptions struct {
 	ConfigPath string
+	WebDir     string
 	Store      *state.Store
 	Metadata   *provider.Manager
 }
@@ -44,11 +45,12 @@ type webController struct {
 	metadata  *provider.Manager
 	editor    *config.Editor
 	logger    *slog.Logger
+	webDir    string
 	stopping  bool
 }
 
 func newWebController(cfg *config.Config, tasks []config.Task, queue *taskQueue, logger *slog.Logger, options serviceOptions) *webController {
-	c := &webController{cfg: cfg, queue: queue, logger: logger, store: options.Store, metadata: options.Metadata, tasks: make(map[string]config.Task), entries: make(map[string]cron.EntryID), scheduler: cron.New(cron.WithLocation(cfg.Location))}
+	c := &webController{cfg: cfg, queue: queue, logger: logger, store: options.Store, metadata: options.Metadata, webDir: options.WebDir, tasks: make(map[string]config.Task), entries: make(map[string]cron.EntryID), scheduler: cron.New(cron.WithLocation(cfg.Location))}
 	if options.ConfigPath != "" {
 		c.editor = config.NewEditor(options.ConfigPath)
 	}
@@ -168,7 +170,7 @@ func (c *webController) handler(health http.Handler, ready *atomic.Bool) http.Ha
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		webError(w, http.StatusNotFound, "unknown management endpoint")
 	})
-	mux.Handle("/", webui.Handler())
+	mux.Handle("/", webui.HandlerFromDirectory(c.webDir))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")

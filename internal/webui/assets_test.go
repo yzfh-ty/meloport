@@ -3,6 +3,8 @@ package webui
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -36,6 +38,54 @@ func TestEmbeddedAssets(t *testing.T) {
 				t.Fatal("HEAD returned content or wrong status")
 			}
 		})
+	}
+}
+
+func TestLiveAssetDirectoryOverridesEmbeddedFiles(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, "index.html"), []byte("live index"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "app.js"), []byte("live asset"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "config.yaml"), []byte("private"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	handler := HandlerFromDirectory(directory)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/assets/app.js", nil))
+	if response.Code != http.StatusOK || response.Body.String() != "live asset" {
+		t.Fatalf("live asset was not served: HTTP%d %q", response.Code, response.Body.String())
+	}
+	if response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("live asset response is cacheable")
+	}
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/config.yaml", nil))
+	if response.Code != http.StatusNotFound {
+		t.Fatal("live asset handler exposed a non-whitelisted file")
+	}
+	if err := os.WriteFile(filepath.Join(directory, "app.js"), []byte("updated live asset"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/assets/app.js", nil))
+	if response.Code != http.StatusOK || response.Body.String() != "updated live asset" {
+		t.Fatalf("asset edit was not visible after refresh: HTTP%d %q", response.Code, response.Body.String())
+	}
+}
+
+func TestLiveAssetDirectoryValidation(t *testing.T) {
+	if err := ValidateDirectory(filepath.Join(t.TempDir(), "missing")); err == nil {
+		t.Fatal("missing live asset directory was accepted")
+	}
+	file := filepath.Join(t.TempDir(), "asset")
+	if err := os.WriteFile(file, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateDirectory(file); err == nil {
+		t.Fatal("file was accepted as live asset directory")
 	}
 }
 

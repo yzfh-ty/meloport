@@ -15,6 +15,7 @@ import (
 	"meloport/internal/config"
 	"meloport/internal/model"
 	"meloport/internal/syncer"
+	"meloport/internal/webui"
 )
 
 type runner interface {
@@ -157,6 +158,9 @@ func serve(parent context.Context, cfg *config.Config, tasks []config.Task, engi
 	var options serviceOptions
 	if len(settings) > 0 {
 		options = settings[0]
+	}
+	if err := webui.ValidateDirectory(options.WebDir); err != nil {
+		return err
 	}
 	allTasks := tasks
 	if options.ConfigPath != "" {
