@@ -814,16 +814,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const name = cell('榜单');
       const layout = element('div', 'ranking-identity');
       const artwork = element('span', 'playlist-icon'); artwork.dataset.platform = data.platform; artwork.append(icon('list'));
-      const copy = element('div', 'task-name'); copy.append(element('div', 'cell-title', item.name || item.id), element('span', 'cell-subtitle mono', item.id));
+      const copy = element('div', 'task-name'); copy.append(element('div', 'cell-title', item.name || item.id));
       layout.append(artwork, copy); name.append(layout);
-      const category = cell('分类'); category.textContent = item.category || '—';
       const count = cell('歌曲数'); count.textContent = Number.isFinite(item.track_count) ? number(item.track_count) : '—';
       const frequency = cell('更新频率'); frequency.textContent = item.update_frequency || '—';
       const action = cell('操作');
       const actions = element('div', 'ranking-row-actions');
       const details = actionButton('详情', 'eye', 'button button-small button-secondary', (event) => openRankingDetails(item, event.currentTarget));
       const subscribe = actionButton('订阅', 'plus', 'button button-small button-primary', (event) => subscribeRanking(item, event.currentTarget));
-      actions.append(details, subscribe); action.append(actions); row.append(name, category, count, frequency, action);
+      actions.append(details, subscribe); action.append(actions); row.append(name, count, frequency, action);
       return row;
     });
     $('rankings-body').replaceChildren(...rows);
@@ -873,7 +872,7 @@ document.addEventListener('DOMContentLoaded', () => {
     state.previewController = controller;
     state.rankingDetail = item;
     text('preview-title', item.name || '排行榜详情');
-    text('preview-summary', `${platforms[state.rankings.platform]} · ${item.category || '未分类'} · ${item.update_frequency || '更新频率未知'}`);
+    text('preview-summary', `${platforms[state.rankings.platform]} · ${item.update_frequency || '更新频率未知'}`);
     text('preview-source', '平台直连');
     $('preview-source').className = 'status-badge status-success';
     text('preview-limit-note', '按平台排名顺序展示榜单曲目。');
@@ -890,7 +889,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!detail || !Array.isArray(detail.tracks)) throw new Error('排行榜服务返回了无法识别的曲目列表。');
       const reported = Number.isFinite(detail.reported_count) ? detail.reported_count : detail.tracks.length;
       text('preview-title', detail.name || item.name || '排行榜详情');
-      text('preview-summary', `${platforms[state.rankings.platform]} · ${item.category || '未分类'} · ${item.update_frequency || '更新频率未知'} · 共 ${number(reported)} 首`);
+      text('preview-summary', `${platforms[state.rankings.platform]} · ${item.update_frequency || '更新频率未知'} · 共 ${number(reported)} 首`);
       const rows = detail.tracks.map((track) => {
         const row = element('tr');
         const song = cell('歌曲');
