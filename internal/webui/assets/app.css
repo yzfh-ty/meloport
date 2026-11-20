@@ -329,7 +329,7 @@ fieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
   main { --panel-pad: 15px; }
   .theme-option > span { min-height: 44px; }
   .page-title-row { gap: 8px; }
-  .mobile-menu-button { display: inline-flex; }
+  .icon-button.mobile-menu-button { display: inline-flex; }
   .sidebar-footer { padding-top: 12px; }
 }
 
