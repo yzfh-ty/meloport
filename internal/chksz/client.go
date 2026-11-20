@@ -17,7 +17,11 @@ import (
 	"meloport/internal/model"
 )
 
-const maxResponseBytes = 8 << 20
+const (
+	maxResponseBytes = 8 << 20
+	requestLimit     = 20
+	requestWindow    = time.Minute
+)
 
 type Options struct {
 	BaseURL     string
@@ -28,12 +32,17 @@ type Options struct {
 }
 
 type Client struct {
-	base        *url.URL
-	key         string
-	http        *http.Client
-	minInterval time.Duration
-	gate        chan struct{}
-	nextRequest time.Time // Protected by gate.
+	base          *url.URL
+	key           string
+	http          *http.Client
+	minInterval   time.Duration
+	gate          chan struct{}
+	nextRequest   time.Time   // Protected by gate.
+	requestStarts []time.Time // Protected by gate.
+	// rateLimit and rateWindow are fixed for production and configurable only
+	// in package tests so short windows can be verified without a one-minute wait.
+	rateLimit  int
+	rateWindow time.Duration
 }
 
 // APIError preserves the upstream status and message, with credentials removed.
@@ -97,6 +106,7 @@ func New(opts Options) (*Client, error) {
 	return &Client{
 		base: base, key: opts.APIKey, http: &client,
 		minInterval: opts.MinInterval, gate: make(chan struct{}, 1),
+		rateLimit: requestLimit, rateWindow: requestWindow,
 	}, nil
 }
 
@@ -257,9 +267,10 @@ func (c *Client) get(ctx context.Context, endpoint string, params url.Values) (m
 	u.RawPath = ""
 	params.Set("apikey", c.key)
 	u.RawQuery = params.Encode()
+	var retryErr error
 	for attempt := 0; attempt < 2; attempt++ {
-		if err := sleep(ctx, time.Until(c.nextRequest)); err != nil {
-			return nil, err
+		if err := c.waitForRequestSlot(ctx); err != nil {
+			return nil, errors.Join(retryErr, err)
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 		if err != nil {
@@ -267,7 +278,6 @@ func (c *Client) get(ctx context.Context, endpoint string, params url.Values) (m
 		}
 		req.Header.Set("Accept", "application/json")
 		req.Header.Set("User-Agent", "meloport/0.1")
-		c.nextRequest = time.Now().Add(c.minInterval)
 		resp, err := c.http.Do(req)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -301,6 +311,7 @@ func (c *Client) get(ctx context.Context, endpoint string, params url.Values) (m
 				if err := sleep(ctx, delay); err != nil {
 					return nil, errors.Join(apiErr, err)
 				}
+				retryErr = apiErr
 				continue
 			}
 			return nil, apiErr
@@ -314,6 +325,50 @@ func (c *Client) get(ctx context.Context, endpoint string, params url.Values) (m
 		return root, nil
 	}
 	panic("unreachable")
+}
+
+// waitForRequestSlot blocks until this client may start another HTTP request.
+// The caller must hold c.gate. A request is counted only once it is ready to
+// start, so canceled waits do not consume the rolling-window allowance.
+func (c *Client) waitForRequestSlot(ctx context.Context) error {
+	for {
+		now := time.Now()
+		cutoff := now.Add(-c.rateWindow)
+		first := 0
+		for first < len(c.requestStarts) && !c.requestStarts[first].After(cutoff) {
+			first++
+		}
+		if first > 0 {
+			c.requestStarts = append(c.requestStarts[:0], c.requestStarts[first:]...)
+		}
+
+		delay := time.Until(c.nextRequest)
+		if c.rateLimit > 0 && len(c.requestStarts) >= c.rateLimit {
+			windowDelay := time.Until(c.requestStarts[0].Add(c.rateWindow))
+			if windowDelay > delay {
+				delay = windowDelay
+			}
+		}
+		if err := sleep(ctx, delay); err != nil {
+			return err
+		}
+		now = time.Now()
+		// Re-check after sleeping because another caller cannot enter while the
+		// gate is held, but the clock may have advanced only partially.
+		cutoff = now.Add(-c.rateWindow)
+		first = 0
+		for first < len(c.requestStarts) && !c.requestStarts[first].After(cutoff) {
+			first++
+		}
+		if first > 0 {
+			c.requestStarts = append(c.requestStarts[:0], c.requestStarts[first:]...)
+		}
+		if (c.rateLimit <= 0 || len(c.requestStarts) < c.rateLimit) && !now.Before(c.nextRequest) {
+			c.requestStarts = append(c.requestStarts, now)
+			c.nextRequest = now.Add(c.minInterval)
+			return nil
+		}
+	}
 }
 
 func (c *Client) unwrap(root map[string]any, named string) (map[string]any, error) {

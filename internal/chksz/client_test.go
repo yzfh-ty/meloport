@@ -344,6 +344,130 @@ func TestRequestsAreSerializedAndSpaced(t *testing.T) {
 	}
 }
 
+func TestRequestsRespectRollingRateWindow(t *testing.T) {
+	var mu sync.Mutex
+	var starts []time.Time
+	client, _ := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		starts = append(starts, time.Now())
+		mu.Unlock()
+		fmt.Fprint(w, `{"tracks":[]}`)
+	})
+	client.rateLimit = 2
+	client.rateWindow = 80 * time.Millisecond
+	var wg sync.WaitGroup
+	for range 3 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := client.Playlist(context.Background(), "123"); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	mu.Lock()
+	defer mu.Unlock()
+	if len(starts) != 3 {
+		t.Fatalf("expected three requests, got %d", len(starts))
+	}
+	if starts[2].Sub(starts[0]) < 60*time.Millisecond {
+		t.Fatalf("third request started before the rolling window allowed it: %s", starts[2].Sub(starts[0]))
+	}
+}
+
+func TestRateWindowCancellationDoesNotConsumeSlot(t *testing.T) {
+	var calls atomic.Int32
+	client, _ := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		fmt.Fprint(w, `{"tracks":[]}`)
+	})
+	client.rateLimit = 1
+	client.rateWindow = 80 * time.Millisecond
+	if _, err := client.Playlist(context.Background(), "123"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if _, err := client.Playlist(ctx, "123"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected canceled rate-window wait, got %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("canceled wait made an unexpected request: %d", calls.Load())
+	}
+}
+
+func TestFailedRequestConsumesRateWindowSlot(t *testing.T) {
+	var calls atomic.Int32
+	client, _ := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, `{"msg":"temporary"}`)
+	})
+	client.rateLimit = 1
+	client.rateWindow = 80 * time.Millisecond
+	if _, err := client.Playlist(context.Background(), "123"); err == nil {
+		t.Fatal("expected first request to fail")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if _, err := client.Playlist(ctx, "123"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected second request to wait for the failed request's slot, got %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("rate window did not count failed request: %d", calls.Load())
+	}
+}
+
+func Test429RetryConsumesAnotherRateWindowSlot(t *testing.T) {
+	var calls atomic.Int32
+	var starts []time.Time
+	var mu sync.Mutex
+	client, _ := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		starts = append(starts, time.Now())
+		mu.Unlock()
+		if calls.Add(1) == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprint(w, `{"msg":"try later"}`)
+			return
+		}
+		fmt.Fprint(w, `{"tracks":[]}`)
+	})
+	client.rateLimit = 1
+	client.rateWindow = 80 * time.Millisecond
+	if _, err := client.Playlist(context.Background(), "123"); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(starts) != 2 || starts[1].Sub(starts[0]) < 60*time.Millisecond {
+		t.Fatalf("429 retry bypassed the rolling window: starts=%v", starts)
+	}
+}
+
+func Test429RetryRateWindowCancellationPreservesAccountError(t *testing.T) {
+	var calls atomic.Int32
+	client, _ := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"msg":"try later"}`)
+	})
+	client.rateLimit = 1
+	client.rateWindow = 80 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	_, err := client.Playlist(ctx, "123")
+	if !errors.Is(err, context.DeadlineExceeded) || !IsAccountError(err) {
+		t.Fatalf("expected canceled retry to remain an account error, got %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("canceled retry made an unexpected request: %d", calls.Load())
+	}
+}
+
 func TestInvalidOptionsAndRequestParametersDoNotRequest(t *testing.T) {
 	for _, opts := range []Options{
 		{},
