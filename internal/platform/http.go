@@ -100,11 +100,29 @@ func (h *HTTP) request(ctx context.Context, method, rawURL string, payload []byt
 }
 
 func (h *HTTP) JSON(ctx context.Context, method, rawURL string, payload []byte, headers http.Header) (map[string]any, error) {
+	return h.json(ctx, method, rawURL, payload, headers, nil)
+}
+
+// JSONAllowDuplicateKeys permits only the named duplicate object keys for a
+// caller that consumes a known upstream response with a documented duplicate.
+// All response size, syntax, depth, top-level and trailing-content checks stay
+// identical to JSON; ordinary callers should use JSON for strict validation.
+func (h *HTTP) JSONAllowDuplicateKeys(ctx context.Context, method, rawURL string, payload []byte, headers http.Header, allowedKeys ...string) (map[string]any, error) {
+	allowed := make(map[string]struct{}, len(allowedKeys))
+	for _, key := range allowedKeys {
+		if key != "" {
+			allowed[key] = struct{}{}
+		}
+	}
+	return h.json(ctx, method, rawURL, payload, headers, allowed)
+}
+
+func (h *HTTP) json(ctx context.Context, method, rawURL string, payload []byte, headers http.Header, allowedDuplicateKeys map[string]struct{}) (map[string]any, error) {
 	body, err := h.request(ctx, method, rawURL, payload, headers)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateJSONKeys(body); err != nil {
+	if err := validateJSONKeys(body, allowedDuplicateKeys); err != nil {
 		return nil, err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(body))
@@ -120,7 +138,7 @@ func (h *HTTP) JSON(ctx context.Context, method, rawURL string, payload []byte, 
 	return result, nil
 }
 
-func validateJSONKeys(body []byte) error {
+func validateJSONKeys(body []byte, allowedDuplicateKeys map[string]struct{}) error {
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.UseNumber()
 	var walk func(int) error
@@ -146,6 +164,12 @@ func validateJSONKeys(body []byte) error {
 						return errors.New("invalid platform JSON field")
 					}
 					if seen[key] {
+						if _, allowed := allowedDuplicateKeys[key]; allowed {
+							if err := walk(depth + 1); err != nil {
+								return err
+							}
+							continue
+						}
 						return errors.New("duplicate platform JSON object field")
 					}
 					seen[key] = true

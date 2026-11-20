@@ -25,13 +25,18 @@ import (
 const (
 	playlistPageSize = 100
 	maxPlaylistSize  = 50000
+	maxRankingTracks = 5000
 	searchPageSize   = 60
+	maxRankings      = 1000
 )
 
 var (
-	numericID    = regexp.MustCompile(`^[1-9][0-9]{0,19}$`)
-	midPattern   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
-	pathPlaylist = regexp.MustCompile(`^/n/(?:yqq|ryqq)/playlist/([1-9][0-9]{0,19})(?:\.html)?/?$`)
+	numericID     = regexp.MustCompile(`^[1-9][0-9]{0,19}$`)
+	midPattern    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
+	pathPlaylist  = regexp.MustCompile(`^/n/(?:yqq|ryqq)/playlist/([1-9][0-9]{0,19})(?:\.html)?/?$`)
+	rankTag       = regexp.MustCompile(`(?is)<[^>]*\bdata-tid\s*=\s*["'][^"']+["'][^>]*>`)
+	rankAttribute = regexp.MustCompile(`(?is)\b([a-z][a-z0-9_-]*)\s*=\s*["']([^"']*)["']`)
+	rankID        = regexp.MustCompile(`(?:^|/)\s*([1-9][0-9]*)\s*$`)
 )
 
 type Options struct {
@@ -41,20 +46,23 @@ type Options struct {
 }
 
 type Client struct {
-	http    *platform.HTTP
-	baseURL string
-	cookie  string
-	initErr error
+	http        *platform.HTTP
+	baseURL     string
+	catalogBase string
+	cookie      string
+	initErr     error
 }
 
 func New(opts Options) *Client {
 	if opts.HTTP == nil {
 		opts.HTTP = platform.NewHTTP(nil, 30*time.Second, time.Second)
 	}
+	catalogBase := opts.BaseURL
 	if opts.BaseURL == "" {
 		opts.BaseURL = "https://u.y.qq.com"
+		catalogBase = "https://c.y.qq.com"
 	}
-	c := &Client{http: opts.HTTP, baseURL: strings.TrimRight(opts.BaseURL, "/"), cookie: opts.Cookie}
+	c := &Client{http: opts.HTTP, baseURL: strings.TrimRight(opts.BaseURL, "/"), catalogBase: strings.TrimRight(catalogBase, "/"), cookie: opts.Cookie}
 	u, err := url.Parse(c.baseURL)
 	if err != nil || u.Hostname() == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		c.initErr = errors.New("QQ platform base URL is invalid")
@@ -175,6 +183,244 @@ func (c *Client) Playlist(ctx context.Context, rawID string) (model.Playlist, er
 			return empty, errors.New("QQ playlist is incomplete: a page ended before the declared total")
 		}
 	}
+}
+
+// Rankings reads the public chart directory used by QQ Music's web client.
+// Chart IDs are not playlist disstids and must remain a separate source type.
+func (c *Client) Rankings(ctx context.Context) ([]model.Ranking, error) {
+	if c.initErr != nil {
+		return nil, c.initErr
+	}
+	endpoint := c.catalogBase + "/v8/fcg-bin/fcg_myqq_toplist.fcg?format=json&uin=0&needNewCode=1&platform=h5"
+	headers := http.Header{"Accept": {"application/json"}, "Referer": {"https://y.qq.com/"}, "Origin": {"https://y.qq.com"}}
+	root, err := c.http.JSON(ctx, http.MethodGet, endpoint, nil, headers)
+	if err != nil {
+		return nil, err
+	}
+	if code, ok := platform.Integer(root["code"]); !ok || code != 0 {
+		return nil, errors.New("QQ ranking catalog request was rejected")
+	}
+	data := platform.Object(root["data"])
+	if data == nil {
+		return nil, errors.New("QQ ranking catalog has no data")
+	}
+	raw := platform.Slice(data["topList"])
+	if raw == nil {
+		raw = platform.Slice(data["toplist"])
+	}
+	if raw == nil || len(raw) > maxRankings {
+		return nil, errors.New("QQ ranking catalog is invalid")
+	}
+	items := make([]model.Ranking, 0, len(raw))
+	for _, value := range raw {
+		object := platform.Object(value)
+		if object == nil {
+			return nil, errors.New("QQ ranking catalog contains an invalid entry")
+		}
+		id := platform.Text(object, "id", "topId", "topid")
+		if !numericID.MatchString(id) {
+			return nil, errors.New("QQ ranking catalog contains an invalid ID")
+		}
+		// QQ's MV board (201) returns video entries without native song MIDs;
+		// keep it out of audio subscriptions rather than exposing an unusable chart.
+		if id == "201" {
+			continue
+		}
+		name := platform.Text(object, "topTitle", "title", "name")
+		if strings.TrimSpace(name) == "" {
+			return nil, errors.New("QQ ranking catalog contains an unnamed entry")
+		}
+		category := platform.Text(object, "groupName", "category")
+		if strings.HasPrefix(name, "巅峰榜·") {
+			category = "巅峰榜"
+			name = strings.TrimPrefix(name, "巅峰榜·")
+		}
+		if !strings.HasSuffix(name, "榜") {
+			name += "榜"
+		}
+		items = append(items, model.Ranking{ID: id, Name: name, Category: category, UpdateFrequency: platform.Text(object, "updateType", "updateFrequency"), TrackCount: intFromFields(object, "songNum", "song_num", "trackCount")})
+	}
+	return items, nil
+}
+
+// Ranking reads current chart members through the native ToplistInfoServer
+// endpoint. Every member must contain a QQ MID; numeric song IDs are rejected
+// because they are not accepted by the audio resolver.
+func (c *Client) Ranking(ctx context.Context, id string) (model.Playlist, error) {
+	if c.initErr != nil {
+		return model.Playlist{}, c.initErr
+	}
+	if !numericID.MatchString(id) {
+		return model.Playlist{}, errors.New("QQ ranking ID must be a positive integer")
+	}
+	period, err := c.currentRankingPeriod(ctx, id)
+	if err != nil {
+		return model.Playlist{}, err
+	}
+	result := model.Playlist{ID: id, Tracks: make([]model.Track, 0, playlistPageSize)}
+	seen := make(map[string]bool)
+	total := -1
+	for offset := 0; ; offset += playlistPageSize {
+		if err := ctx.Err(); err != nil {
+			return model.Playlist{}, err
+		}
+		if offset >= maxRankingTracks {
+			return model.Playlist{}, errors.New("QQ ranking exceeds the 5000-track safety limit")
+		}
+		payload := map[string]any{
+			"comm": map[string]any{"uin": 0, "format": "json", "ct": 20, "cv": 1859},
+			"toplist": map[string]any{
+				"module": "musicToplist.ToplistInfoServer", "method": "GetDetail",
+				"param": map[string]any{"topid": json.Number(id), "num": playlistPageSize, "offset": offset, "period": period},
+			},
+		}
+		root, err := c.post(ctx, "/cgi-bin/musicu.fcg", payload, "", false)
+		if err != nil {
+			return model.Playlist{}, fmt.Errorf("read QQ ranking page: %w", err)
+		}
+		data, err := responseData(root, "toplist")
+		if err != nil {
+			return model.Playlist{}, err
+		}
+		items, pageTotal, hasTotal, found, err := rankingSongList(data)
+		if err != nil {
+			return model.Playlist{}, err
+		}
+		if !found {
+			return model.Playlist{}, errors.New("QQ ranking response has no song list")
+		}
+		if len(items) > playlistPageSize {
+			return model.Playlist{}, errors.New("QQ ranking returned more songs than requested")
+		}
+		if hasTotal {
+			if total < 0 {
+				total = pageTotal
+				result.ReportedCount = total
+			} else if pageTotal != total {
+				return model.Playlist{}, errors.New("QQ ranking changed during pagination; retry the task later")
+			}
+		}
+		if total < 0 {
+			result.Name = platform.Text(data, "topTitle", "title", "name")
+		} else if result.Name == "" {
+			result.Name = platform.Text(data, "topTitle", "title", "name")
+		}
+		if len(items) == 0 {
+			if total > 0 && len(result.Tracks) < total {
+				return model.Playlist{}, errors.New("QQ ranking is incomplete: an expected page is empty")
+			}
+			break
+		}
+		if total >= 0 && offset+len(items) > total {
+			return model.Playlist{}, errors.New("QQ ranking returned more songs than its declared total")
+		}
+		for _, item := range items {
+			track, err := decodeRankingTrack(item)
+			if err != nil {
+				return model.Playlist{}, err
+			}
+			if seen[track.ID] {
+				return model.Playlist{}, errors.New("QQ ranking contains duplicate song MIDs")
+			}
+			seen[track.ID] = true
+			result.Tracks = append(result.Tracks, track)
+		}
+		if total > 0 && len(result.Tracks) == total {
+			break
+		}
+		if len(items) < playlistPageSize {
+			if total > 0 {
+				return model.Playlist{}, errors.New("QQ ranking is incomplete: a page ended before the declared total")
+			}
+			break
+		}
+	}
+	if total < 0 {
+		result.ReportedCount = len(result.Tracks)
+	}
+	return result, nil
+}
+
+func (c *Client) currentRankingPeriod(ctx context.Context, id string) (string, error) {
+	uri := c.catalogBase + "/node/pc/wk_v15/top.html"
+	body, err := c.http.TextResponse(ctx, http.MethodGet, uri, nil, http.Header{"Accept": {"text/html"}, "Referer": {"https://y.qq.com/"}})
+	if err != nil {
+		return "", fmt.Errorf("read QQ ranking period: %w", err)
+	}
+	for _, tag := range rankTag.FindAllString(body, -1) {
+		attrs := make(map[string]string)
+		for _, match := range rankAttribute.FindAllStringSubmatch(tag, -1) {
+			if len(match) == 3 {
+				attrs[strings.ToLower(match[1])] = strings.TrimSpace(match[2])
+			}
+		}
+		tidValue := attrs["data-tid"]
+		matches := rankID.FindStringSubmatch(tidValue)
+		if len(matches) != 2 || matches[1] != id {
+			continue
+		}
+		period := attrs["data-date"]
+		if period == "" {
+			period = attrs["data-period"]
+		}
+		period = strings.TrimSpace(period)
+		if len(period) <= 32 && period != "" && strings.IndexFunc(period, func(r rune) bool { return r == '"' || r == '\'' || r == '<' || r == '>' || r == '\n' || r == '\r' }) < 0 {
+			return period, nil
+		}
+	}
+	return "", errors.New("QQ ranking has no current period")
+}
+
+func intFromFields(object map[string]any, fields ...string) int {
+	for _, field := range fields {
+		if n, ok := platform.Integer(object[field]); ok && n >= 0 && n <= maxPlaylistSize {
+			return int(n)
+		}
+	}
+	return 0
+}
+
+func rankingSongList(data map[string]any) ([]any, int, bool, bool, error) {
+	for _, key := range []string{"songInfoList", "songlist", "songList", "rankSongList", "song_info_list"} {
+		if raw, exists := data[key]; exists {
+			items, ok := raw.([]any)
+			if !ok || len(items) > maxPlaylistSize {
+				return nil, 0, false, true, errors.New("QQ ranking returned an invalid song list")
+			}
+			for _, field := range []string{"totalNum", "total_num", "total_song_num", "total", "songNum", "song_num"} {
+				if rawTotal, exists := data[field]; exists {
+					total, valid := platform.Integer(rawTotal)
+					if !valid || total < 0 || total > maxRankingTracks {
+						return nil, 0, false, true, errors.New("QQ ranking returned an invalid total")
+					}
+					return items, int(total), true, true, nil
+				}
+			}
+			return items, 0, false, true, nil
+		}
+	}
+	for _, key := range []string{"data", "detail", "toplist"} {
+		if nested := platform.Object(data[key]); nested != nil {
+			if items, total, hasTotal, found, err := rankingSongList(nested); found || err != nil {
+				return items, total, hasTotal, found, err
+			}
+		}
+	}
+	return nil, 0, false, false, nil
+}
+
+func decodeRankingTrack(raw any) (model.Track, error) {
+	object := platform.Object(raw)
+	if object == nil {
+		return model.Track{}, errors.New("QQ ranking returned a malformed song")
+	}
+	for _, key := range []string{"songInfo", "song", "songData"} {
+		if nested := platform.Object(object[key]); nested != nil {
+			object = nested
+			break
+		}
+	}
+	return decodeTrack(object)
 }
 
 // Search returns the requested song-offset window from direct QQ search.

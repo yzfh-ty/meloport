@@ -110,6 +110,174 @@ func TestPlaylistEmpty(t *testing.T) {
 	}
 }
 
+func TestRankingsUseNativeCatalogPeriodAndMIDs(t *testing.T) {
+	client, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v8/fcg-bin/fcg_myqq_toplist.fcg":
+			if r.Method != http.MethodGet || r.Header.Get("Cookie") != "" {
+				t.Error("public QQ ranking catalog received unexpected request credentials")
+			}
+			io.WriteString(w, `{"code":0,"data":{"topList":[{"id":4,"topTitle":"巅峰榜·流行指数"}]}}`)
+		case "/node/pc/wk_v15/top.html":
+			if r.Header.Get("Cookie") != "" {
+				t.Error("public QQ ranking period received a cookie")
+			}
+			io.WriteString(w, `<i data-listkey="x" data-listname="流行指数榜" data-tid="/toplist/4" data-date="2026-11-20" class="period"></i>`)
+		case "/cgi-bin/musicu.fcg":
+			if r.Header.Get("Cookie") != "QQ_COOKIE=fixture" {
+				t.Error("QQ detail cookie was not sent to the platform endpoint")
+			}
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Error(err)
+				return
+			}
+			request := payload["toplist"].(map[string]any)
+			if request["module"] != "musicToplist.ToplistInfoServer" || request["method"] != "GetDetail" {
+				t.Error("wrong native QQ ranking method")
+			}
+			params := request["param"].(map[string]any)
+			if params["topid"] != float64(4) || params["period"] != "2026-11-20" || params["num"] != float64(100) {
+				t.Errorf("wrong QQ ranking period params: %#v", params)
+			}
+			io.WriteString(w, `{"code":0,"toplist":{"code":0,"data":{"topTitle":"流行指数榜","songInfoList":[{"mid":"003NativeMID","id":9001,"title":"榜单歌曲","singer":[{"name":"歌手"}],"album":{"name":"专辑"},"interval":180}]}}}`)
+		default:
+			t.Errorf("unexpected QQ ranking endpoint %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	})
+	client.cookie = "QQ_COOKIE=fixture"
+	items, err := client.Rankings(context.Background())
+	if err != nil || len(items) != 1 || items[0].ID != "4" || items[0].Name != "流行指数榜" {
+		t.Fatalf("QQ ranking catalog failed: %+v %v", items, err)
+	}
+	playlist, err := client.Ranking(context.Background(), "4")
+	if err != nil || playlist.ReportedCount != 1 || len(playlist.Tracks) != 1 || playlist.Tracks[0].ID != "003NativeMID" {
+		t.Fatalf("QQ ranking detail failed: %+v %v", playlist, err)
+	}
+}
+
+func TestQQRankingRejectsSongWithoutNativeMID(t *testing.T) {
+	client, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/node/pc/wk_v15/top.html" {
+			io.WriteString(w, `<i data-listname="榜" data-tid="/toplist/4" data-date="2026-11-20"></i>`)
+			return
+		}
+		io.WriteString(w, `{"code":0,"toplist":{"code":0,"data":{"songInfoList":[{"id":123,"title":"不带 MID 的歌"}]}}}`)
+	})
+	if _, err := client.Ranking(context.Background(), "4"); err == nil {
+		t.Fatal("accepted QQ ranking song without a native MID")
+	}
+}
+
+func TestRankingsCatalogAndDetailUseCurrentPeriodAndMID(t *testing.T) {
+	client, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v8/fcg-bin/fcg_myqq_toplist.fcg":
+			if r.Method != http.MethodGet || r.URL.Query().Get("format") != "json" {
+				t.Errorf("wrong QQ ranking catalog request: %s %s", r.Method, r.URL.String())
+			}
+			io.WriteString(w, `{"code":0,"data":{"topList":[{"id":26,"topTitle":"巅峰榜·新歌榜","songNum":100,"updateType":"每日"},{"id":201,"topTitle":"MV榜","songNum":300,"updateType":"每日"}]}}`)
+		case "/node/pc/wk_v15/top.html":
+			// This is the same data-* shape used by QQ's public ranking page.
+			io.WriteString(w, `<a class='period' data-period='2026_47' href='/top/26' data-tid='top/26' data-listname='巅峰榜'></a>`)
+		case "/cgi-bin/musicu.fcg":
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Error(err)
+				return
+			}
+			request := payload["toplist"].(map[string]any)
+			params := request["param"].(map[string]any)
+			if request["module"] != "musicToplist.ToplistInfoServer" || request["method"] != "GetDetail" || params["topid"] != float64(26) || params["period"] != "2026_47" || params["offset"] != float64(0) || params["num"] != float64(100) {
+				t.Errorf("wrong QQ ranking detail request: %+v", payload)
+			}
+			io.WriteString(w, `{"code":0,"toplist":{"code":0,"data":{"topTitle":"新歌榜","songInfoList":[{"mid":"MID_NATIVE_1","title":"Song","singer":[{"name":"Artist"}],"album":{"name":"Album"},"interval":201}]}}}`)
+		default:
+			t.Errorf("unexpected QQ ranking path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	})
+	catalogue, err := client.Rankings(context.Background())
+	if err != nil || len(catalogue) != 1 || catalogue[0].ID != "26" || catalogue[0].Name != "新歌榜" || catalogue[0].TrackCount != 100 || catalogue[0].UpdateFrequency != "每日" {
+		t.Fatalf("bad QQ ranking catalog: %+v %v", catalogue, err)
+	}
+	list, err := client.Ranking(context.Background(), "26")
+	if err != nil || list.ID != "26" || len(list.Tracks) != 1 || list.Tracks[0].ID != "MID_NATIVE_1" || list.Tracks[0].Duration != 201 {
+		t.Fatalf("bad QQ ranking detail: %+v %v", list, err)
+	}
+}
+
+func TestQQRankingPaginatesToDeclaredTotal(t *testing.T) {
+	var calls atomic.Int32
+	client, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/node/pc/wk_v15/top.html":
+			io.WriteString(w, `<i data-date="20261120" data-tid="/toplist/26" data-listname="新歌榜"></i>`)
+		case "/cgi-bin/musicu.fcg":
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Error(err)
+				return
+			}
+			request := payload["toplist"].(map[string]any)
+			params := request["param"].(map[string]any)
+			offset := int(params["offset"].(float64))
+			if params["num"] != float64(100) || offset != int(calls.Load())*100 {
+				t.Errorf("wrong QQ ranking page params: %#v", params)
+			}
+			calls.Add(1)
+			items := make([]any, 0, 100)
+			for i := offset; i < min(offset+100, 205); i++ {
+				items = append(items, testTrack(i))
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "toplist": map[string]any{"code": 0, "data": map[string]any{"topTitle": "新歌榜", "totalNum": 205, "songInfoList": items}}})
+		default:
+			t.Errorf("unexpected QQ ranking path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	})
+	list, err := client.Ranking(context.Background(), "26")
+	if err != nil || calls.Load() != 3 || list.ReportedCount != 205 || len(list.Tracks) != 205 {
+		t.Fatalf("QQ ranking pagination failed: calls=%d list=%+v err=%v", calls.Load(), list, err)
+	}
+}
+
+func TestQQRankingMissingTotalFailsAtBoundedPageCap(t *testing.T) {
+	var calls atomic.Int32
+	client, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/node/pc/wk_v15/top.html" {
+			io.WriteString(w, `<i data-tid="/toplist/26" data-date="20261120"></i>`)
+			return
+		}
+		calls.Add(1)
+		items := make([]any, 100)
+		for i := range items {
+			items[i] = testTrack(int(calls.Load())*100 + i)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "toplist": map[string]any{"code": 0, "data": map[string]any{"songInfoList": items}}})
+	})
+	_, err := client.Ranking(context.Background(), "26")
+	if err == nil || !strings.Contains(err.Error(), "5000-track safety limit") || calls.Load() != 50 {
+		t.Fatalf("missing total did not fail closed at cap: calls=%d err=%v", calls.Load(), err)
+	}
+}
+
+func TestRankingRejectsMissingOrNumericMID(t *testing.T) {
+	for _, song := range []string{`{"id":1,"title":"Song"}`, `{"mid":123,"title":"Song"}`} {
+		client, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/node/pc/wk_v15/top.html" {
+				io.WriteString(w, `<a data-listname="榜" data-tid="top/26" data-date="20261120"></a>`)
+				return
+			}
+			io.WriteString(w, `{"code":0,"toplist":{"code":0,"data":{"songInfoList":[`+song+`]}}}`)
+		})
+		if _, err := client.Ranking(context.Background(), "26"); err == nil {
+			t.Fatalf("accepted QQ ranking song without native MID: %s", song)
+		}
+	}
+}
+
 func TestPlaylistRejectsMalformedAndIncomplete(t *testing.T) {
 	for _, mode := range []string{"empty", "short", "repeat", "changed total", "no list", "negative total", "excess total", "too many", "numeric mid", "missing mid", "invalid track", "invalid duration", "outer code", "inner code", "missing code", "missing data", "http status", "invalid json"} {
 		t.Run(mode, func(t *testing.T) {

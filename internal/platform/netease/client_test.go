@@ -187,6 +187,20 @@ func TestPlaylistNativeRequestAndMetadata(t *testing.T) {
 	}
 }
 
+func TestRankingsCatalogUsesNativeEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/toplist" || r.Header.Get("Cookie") != "MUSIC_U=platform_cookie_only" {
+			t.Errorf("unexpected ranking request: %s %s", r.Method, r.URL.Path)
+		}
+		io.WriteString(w, `{"code":200,"list":[{"id":26,"name":"热歌榜","trackCount":100,"updateFrequency":null,"updateFrequency":"每天"}]}`)
+	}))
+	defer server.Close()
+	items, err := fixtureClient(server).Rankings(context.Background())
+	if err != nil || len(items) != 1 || items[0].ID != "26" || items[0].Name != "热歌榜" || items[0].TrackCount != 100 {
+		t.Fatalf("unexpected rankings: %+v %v", items, err)
+	}
+}
+
 func TestPlaylistMissingDetailsFixedBatchesAndOrder(t *testing.T) {
 	var detailCalls atomic.Int32
 	const total = 1002
@@ -399,6 +413,50 @@ func TestNativeNetworkFailureDoesNotLeakCookie(t *testing.T) {
 	_, err := fixtureClient(server).Playlist(context.Background(), "123")
 	if err == nil || strings.Contains(err.Error(), "platform_cookie_only") {
 		t.Fatalf("unsafe error %v", err)
+	}
+}
+
+func TestRankingsCatalogAndRankingReuseNativePlaylist(t *testing.T) {
+	var catalog, detail int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/toplist":
+			catalog++
+			io.WriteString(w, `{"code":200,"list":[{"id":19723756,"name":"飙升榜","trackCount":100,"updateFrequency":"每小时"}]}`)
+		case "/api/linux/forward":
+			detail++
+			io.WriteString(w, `{"code":200,"playlist":{"id":19723756,"name":"飙升榜","trackCount":1,"trackIds":[{"id":123}],"tracks":[{"id":123,"name":"Song","ar":[{"name":"Artist"}],"al":{"name":"Album"},"dt":180000}]}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := fixtureClient(server)
+	catalogue, err := client.Rankings(context.Background())
+	if err != nil || len(catalogue) != 1 || catalogue[0].ID != "19723756" || catalogue[0].TrackCount != 100 || catalogue[0].UpdateFrequency != "每小时" {
+		t.Fatalf("bad NetEase ranking catalog: %+v %v", catalogue, err)
+	}
+	list, err := client.Ranking(context.Background(), "19723756")
+	if err != nil || list.ID != "19723756" || len(list.Tracks) != 1 || list.Tracks[0].ID != "123" {
+		t.Fatalf("bad NetEase ranking detail: %+v %v", list, err)
+	}
+	if catalog != 1 || detail != 1 {
+		t.Fatalf("unexpected native calls catalog=%d detail=%d", catalog, detail)
+	}
+}
+
+func TestRankingsRejectInvalidCatalogEntries(t *testing.T) {
+	for _, response := range []string{
+		`{"code":200}`,
+		`{"code":200,"list":[1]}`,
+		`{"code":200,"list":[{"id":0,"name":"Bad"}]}`,
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, response) }))
+		_, err := fixtureClient(server).Rankings(context.Background())
+		server.Close()
+		if err == nil {
+			t.Fatalf("accepted malformed ranking catalog: %s", response)
+		}
 	}
 }
 

@@ -21,6 +21,7 @@ import (
 
 	"meloport/internal/chksz"
 	"meloport/internal/config"
+	"meloport/internal/model"
 	"meloport/internal/provider"
 	"meloport/internal/state"
 	"meloport/internal/webui"
@@ -47,10 +48,17 @@ type webController struct {
 	logger    *slog.Logger
 	webDir    string
 	stopping  bool
+	rankingMu sync.Mutex
+	rankings  map[string]rankingCache
+}
+
+type rankingCache struct {
+	items     []model.Ranking
+	fetchedAt time.Time
 }
 
 func newWebController(cfg *config.Config, tasks []config.Task, queue *taskQueue, logger *slog.Logger, options serviceOptions) *webController {
-	c := &webController{cfg: cfg, queue: queue, logger: logger, store: options.Store, metadata: options.Metadata, webDir: options.WebDir, tasks: make(map[string]config.Task), entries: make(map[string]cron.EntryID), scheduler: cron.New(cron.WithLocation(cfg.Location))}
+	c := &webController{cfg: cfg, queue: queue, logger: logger, store: options.Store, metadata: options.Metadata, webDir: options.WebDir, tasks: make(map[string]config.Task), entries: make(map[string]cron.EntryID), scheduler: cron.New(cron.WithLocation(cfg.Location)), rankings: make(map[string]rankingCache)}
 	if options.ConfigPath != "" {
 		c.editor = config.NewEditor(options.ConfigPath)
 	}
@@ -165,6 +173,8 @@ func (c *webController) handler(health http.Handler, ready *atomic.Bool) http.Ha
 	mux.HandleFunc("POST /api/tasks/{id}/run", c.runTask)
 	mux.HandleFunc("GET /api/tasks/{id}/playlist", c.preview)
 	mux.HandleFunc("GET /api/search", c.search)
+	mux.HandleFunc("GET /api/rankings", c.rankingsHandler)
+	mux.HandleFunc("GET /api/rankings/{platform}/{id}", c.rankingDetail)
 	mux.HandleFunc("PUT /api/settings", c.settings)
 	mux.HandleFunc("POST /api/run", c.runAll)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
@@ -186,7 +196,7 @@ func (c *webController) handler(health http.Handler, ready *atomic.Bool) http.Ha
 				webError(w, 403, "cross-site management requests are refused")
 				return
 			}
-			if r.URL.Path == "/api/search" || strings.HasSuffix(r.URL.Path, "/playlist") {
+			if r.URL.Path == "/api/search" || r.URL.Path == "/api/rankings" || strings.HasPrefix(r.URL.Path, "/api/rankings/") || strings.HasSuffix(r.URL.Path, "/playlist") {
 				if r.Header.Get("X-Meloport-Request") != "1" {
 					webError(w, 403, "metadata requests require the Meloport request header")
 					return
@@ -455,12 +465,84 @@ func (c *webController) preview(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
-	playlist, err := c.metadata.Playlist(ctx, task.Platform, task.PlaylistID)
+	sourceType := task.SourceType
+	if sourceType == "" {
+		sourceType = "playlist"
+	}
+	sourceID := task.SourceID
+	if sourceID == "" {
+		sourceID = task.PlaylistID
+	}
+	playlist, err := c.metadata.PlaylistFor(ctx, task.Platform, sourceType, sourceID)
 	if err != nil {
 		webError(w, 502, err.Error())
 		return
 	}
 	webJSON(w, 200, playlist)
+}
+
+func (c *webController) rankingsHandler(w http.ResponseWriter, r *http.Request) {
+	if c.metadata == nil {
+		webError(w, http.StatusServiceUnavailable, "metadata readers are unavailable")
+		return
+	}
+	platform := r.URL.Query().Get("platform")
+	if platform != "netease" && platform != "qq" && platform != "kugou" {
+		webError(w, http.StatusBadRequest, "platform must be netease, qq or kugou")
+		return
+	}
+	force := r.URL.Query().Get("refresh") == "1"
+	now := time.Now()
+	if !force {
+		c.rankingMu.Lock()
+		cached, ok := c.rankings[platform]
+		if ok && now.Sub(cached.fetchedAt) < 5*time.Minute {
+			items := append([]model.Ranking{}, cached.items...)
+			fetchedAt := cached.fetchedAt
+			c.rankingMu.Unlock()
+			webJSON(w, http.StatusOK, map[string]any{"platform": platform, "rankings": items, "fetched_at": fetchedAt.Format(time.RFC3339)})
+			return
+		}
+		c.rankingMu.Unlock()
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+	items, err := c.metadata.Rankings(ctx, platform)
+	if err != nil {
+		webError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	items = append([]model.Ranking{}, items...)
+	now = time.Now()
+	c.rankingMu.Lock()
+	c.rankings[platform] = rankingCache{items: items, fetchedAt: now}
+	c.rankingMu.Unlock()
+	webJSON(w, http.StatusOK, map[string]any{"platform": platform, "rankings": items, "fetched_at": now.Format(time.RFC3339)})
+}
+
+func (c *webController) rankingDetail(w http.ResponseWriter, r *http.Request) {
+	if c.metadata == nil {
+		webError(w, http.StatusServiceUnavailable, "metadata readers are unavailable")
+		return
+	}
+	platformName, id := r.PathValue("platform"), r.PathValue("id")
+	if platformName != "netease" && platformName != "qq" && platformName != "kugou" {
+		webError(w, http.StatusBadRequest, "platform must be netease, qq or kugou")
+		return
+	}
+	normalizedID, err := config.ParseRankingFor(platformName, id)
+	if err != nil {
+		webError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+	playlist, err := c.metadata.PlaylistFor(ctx, platformName, "ranking", normalizedID)
+	if err != nil {
+		webError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	webJSON(w, http.StatusOK, playlist)
 }
 
 func (c *webController) search(w http.ResponseWriter, r *http.Request) {

@@ -30,6 +30,8 @@ const webTestCookie = "MUSIC_U=web_fixture_cookie_not_real"
 
 type webTestSource struct {
 	playlists, searches atomic.Int32
+	rankings            atomic.Int32
+	rankingReads        atomic.Int32
 	fail                atomic.Bool
 }
 
@@ -47,6 +49,22 @@ func (s *webTestSource) Search(ctx context.Context, keyword string, limit, offse
 		return nil, errors.New("native fixture unavailable")
 	}
 	return []model.Track{{ID: "123", Name: keyword, Artists: []string{"Singer"}}}, nil
+}
+
+func (s *webTestSource) Rankings(context.Context) ([]model.Ranking, error) {
+	s.rankings.Add(1)
+	if s.fail.Load() {
+		return nil, errors.New("native fixture unavailable")
+	}
+	return []model.Ranking{{ID: "19723756", Name: "Native chart", Category: "流行", TrackCount: 10, UpdateFrequency: "每日更新"}}, nil
+}
+
+func (s *webTestSource) Ranking(ctx context.Context, id string) (model.Playlist, error) {
+	s.rankingReads.Add(1)
+	if s.fail.Load() {
+		return model.Playlist{}, errors.New("native fixture unavailable")
+	}
+	return model.Playlist{ID: id, Name: "Native chart", ReportedCount: 1, Tracks: []model.Track{{ID: "123", Name: "Chart song", Artists: []string{"Singer"}}}}, nil
 }
 
 type webTestGateway struct{ calls atomic.Int32 }
@@ -373,10 +391,10 @@ func TestWebOriginHostAndMetadataRequestGuards(t *testing.T) {
 	}
 	webStatus(t, webRequest(t, f, "GET", "/api/overview", nil, func(r *http.Request) { r.Host = "external.example" }), 403)
 	webStatus(t, webRequest(t, f, "GET", "/api/overview", nil, func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "cross-site") }), 403)
-	for _, path := range []string{"/api/search?keyword=Song", "/api/tasks/one/playlist"} {
+	for _, path := range []string{"/api/search?keyword=Song", "/api/rankings?platform=netease", "/api/rankings/netease/19723756", "/api/tasks/one/playlist"} {
 		webStatus(t, webRequest(t, f, "GET", path, nil, func(r *http.Request) { r.Header.Del("X-Meloport-Request") }), 403)
 	}
-	if f.sources["netease"].searches.Load()+f.sources["netease"].playlists.Load()+f.gateway.calls.Load() != 0 {
+	if f.sources["netease"].searches.Load()+f.sources["netease"].playlists.Load()+f.sources["netease"].rankings.Load()+f.sources["netease"].rankingReads.Load()+f.gateway.calls.Load() != 0 {
 		t.Fatal("rejected foreign metadata request consumed a source")
 	}
 	for _, host := range []string{"localhost", "localhost:8080", "127.0.0.1:8080", "[::1]:8080"} {
@@ -413,6 +431,52 @@ func TestWebPreviewAndSearchUseNativeReadersAndValidateQueries(t *testing.T) {
 			t.Fatal("invalid query reached metadata reader")
 		}
 	}
+}
+
+func TestWebRankingsArePlatformScopedAndCached(t *testing.T) {
+	f := newWebFixture(t)
+	for _, source := range []string{"netease", "qq", "kugou"} {
+		w := webRequest(t, f, http.MethodGet, "/api/rankings?platform="+source, nil)
+		webStatus(t, w, http.StatusOK)
+		if !strings.Contains(w.Body.String(), "Native chart") || f.sources[source].rankings.Load() != 1 {
+			t.Fatalf("ranking catalog did not use native reader for %s", source)
+		}
+		webStatus(t, webRequest(t, f, http.MethodGet, "/api/rankings?platform="+source, nil), http.StatusOK)
+		if f.sources[source].rankings.Load() != 1 {
+			t.Fatalf("ranking catalog was not served from the five-minute cache for %s", source)
+		}
+		webStatus(t, webRequest(t, f, http.MethodGet, "/api/rankings?platform="+source+"&refresh=1", nil), http.StatusOK)
+		if f.sources[source].rankings.Load() != 2 {
+			t.Fatalf("ranking refresh did not bypass cache for %s", source)
+		}
+	}
+	webStatus(t, webRequest(t, f, http.MethodGet, "/api/rankings?platform=unknown", nil), http.StatusBadRequest)
+	f.sources["qq"].fail.Store(true)
+	webStatus(t, webRequest(t, f, http.MethodGet, "/api/rankings?platform=qq&refresh=1", nil), http.StatusBadGateway)
+	if f.gateway.calls.Load() != 0 {
+		t.Fatal("ranking lookup used the metered ChKSz gateway")
+	}
+}
+
+func TestWebPreviewDispatchesRankingTasksNatively(t *testing.T) {
+	task := config.TaskInput{ID: "top-hits", Platform: "netease", SourceType: "ranking", SourceID: "19723756", Enabled: true}
+	f := newWebFixture(t, task)
+	w := webRequest(t, f, http.MethodGet, "/api/tasks/top-hits/playlist", nil)
+	webStatus(t, w, http.StatusOK)
+	if !strings.Contains(w.Body.String(), "Chart song") || f.sources["netease"].rankingReads.Load() != 1 || f.sources["netease"].playlists.Load() != 0 || f.gateway.calls.Load() != 0 {
+		t.Fatal("ranking preview did not use the native ranking reader")
+	}
+}
+
+func TestWebRankingDetailDispatchesNativeSource(t *testing.T) {
+	f := newWebFixture(t)
+	w := webRequest(t, f, http.MethodGet, "/api/rankings/netease/19723756", nil)
+	webStatus(t, w, http.StatusOK)
+	if !strings.Contains(w.Body.String(), "Chart song") || f.sources["netease"].rankingReads.Load() != 1 {
+		t.Fatal("ranking detail did not use native ranking reader")
+	}
+	webStatus(t, webRequest(t, f, http.MethodGet, "/api/rankings/unknown/19723756", nil), http.StatusBadRequest)
+	webStatus(t, webRequest(t, f, http.MethodGet, "/api/rankings/netease/0", nil), http.StatusBadRequest)
 }
 
 func TestWebRunQueueCoalescesAndRejectsDisabledTasks(t *testing.T) {

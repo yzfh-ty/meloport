@@ -12,7 +12,7 @@ import (
 func TestEmbeddedAssets(t *testing.T) {
 	handler := Handler()
 	for _, item := range []struct{ path, contentType, contains string }{
-		{"/", "text/html", "任务概览"},
+		{"/", "text/html", "排行榜"},
 		{"/assets/app.css", "text/css", "prefers-reduced-motion"},
 		{"/assets/app.js", "text/javascript", "X-Meloport-Request"},
 	} {
@@ -38,6 +38,30 @@ func TestEmbeddedAssets(t *testing.T) {
 				t.Fatal("HEAD returned content or wrong status")
 			}
 		})
+	}
+}
+
+func TestRankingsControlsAreEmbeddedWithExistingThemeTokens(t *testing.T) {
+	cases := []struct {
+		path     string
+		required []string
+	}{
+		{"/", []string{`data-view="rankings"`, `data-nav="rankings"`, `id="rankings-platform"`, `id="task-source-type"`, `id="task-source-id"`}},
+		{"/assets/app.js", []string{`/api/rankings?`, `source_type:`, `source_id:`, `subscribeRanking`}},
+		{"/assets/app.css", []string{`var(--accent)`, `.segmented-control`, `.ranking-table`, `@container (max-width: 720px)`}},
+	}
+	handler := Handler()
+	for _, item := range cases {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, item.path, nil))
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s status = %d", item.path, response.Code)
+		}
+		for _, required := range item.required {
+			if !strings.Contains(response.Body.String(), required) {
+				t.Errorf("%s does not contain %q", item.path, required)
+			}
+		}
 	}
 }
 

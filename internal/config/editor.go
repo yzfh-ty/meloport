@@ -21,13 +21,15 @@ var (
 // TaskInput contains editable values, not derived IDs, absolute paths or an
 // inherited schedule/quality. Empty optional strings retain inheritance.
 type TaskInput struct {
-	ID        string `json:"id"`
-	Platform  string `json:"platform"`
-	Playlist  string `json:"playlist"`
-	Schedule  string `json:"schedule"`
-	Quality   string `json:"quality"`
-	Directory string `json:"directory"`
-	Enabled   bool   `json:"enabled"`
+	ID         string `json:"id"`
+	Platform   string `json:"platform"`
+	Playlist   string `json:"playlist"`
+	SourceType string `json:"source_type"`
+	SourceID   string `json:"source_id"`
+	Schedule   string `json:"schedule"`
+	Quality    string `json:"quality"`
+	Directory  string `json:"directory"`
+	Enabled    bool   `json:"enabled"`
 }
 
 type SettingsInput struct {
@@ -72,7 +74,23 @@ func (e *Editor) Tasks() ([]TaskInput, error) {
 		if err := node.Decode(&task); err != nil {
 			return nil, errors.New("cannot read editable task fields")
 		}
-		out = append(out, TaskInput{ID: task.ID, Platform: task.Platform, Playlist: task.Playlist, Schedule: task.Schedule, Quality: task.Quality, Directory: task.Directory, Enabled: task.Enabled == nil || *task.Enabled})
+		sourceType, sourceID := task.SourceType, task.SourceID
+		if sourceType == "" {
+			sourceType, sourceID = "playlist", task.Playlist
+		}
+		if sourceType == "playlist" && sourceID == "" {
+			sourceID = task.Playlist
+		}
+		if sourceType == "playlist" && sourceID != "" {
+			platform := task.Platform
+			if platform == "" {
+				platform = "netease"
+			}
+			if normalized, err := ParsePlaylistFor(platform, sourceID); err == nil {
+				sourceID = normalized
+			}
+		}
+		out = append(out, TaskInput{ID: task.ID, Platform: task.Platform, Playlist: task.Playlist, SourceType: sourceType, SourceID: sourceID, Schedule: task.Schedule, Quality: task.Quality, Directory: task.Directory, Enabled: task.Enabled == nil || *task.Enabled})
 	}
 	return out, nil
 }
@@ -269,11 +287,37 @@ func taskSequence(root *yaml.Node, create bool) (*yaml.Node, error) {
 func writeTask(node *yaml.Node, input TaskInput) {
 	setScalar(node, "id", input.ID, "!!str")
 	setOptional(node, "platform", input.Platform)
-	setScalar(node, "playlist", input.Playlist, "!!str")
+	sourceType := input.SourceType
+	if sourceType == "" {
+		sourceType = "playlist"
+	}
+	if sourceType == "ranking" {
+		setScalar(node, "source_type", sourceType, "!!str")
+		setScalar(node, "source_id", input.SourceID, "!!str")
+		deleteField(node, "playlist")
+	} else {
+		// Keep the established playlist YAML shape for ordinary subscriptions.
+		playlist := input.Playlist
+		if playlist == "" {
+			playlist = input.SourceID
+		}
+		setScalar(node, "playlist", playlist, "!!str")
+		deleteField(node, "source_type")
+		deleteField(node, "source_id")
+	}
 	setOptional(node, "schedule", input.Schedule)
 	setOptional(node, "quality", input.Quality)
 	setOptional(node, "directory", input.Directory)
 	setScalar(node, "enabled", boolText(input.Enabled), "!!bool")
+}
+
+func deleteField(mapping *yaml.Node, key string) {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == key {
+			mapping.Content = append(mapping.Content[:i], mapping.Content[i+2:]...)
+			return
+		}
+	}
 }
 
 func field(mapping *yaml.Node, key string) *yaml.Node {

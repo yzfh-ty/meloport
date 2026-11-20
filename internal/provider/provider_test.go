@@ -18,6 +18,23 @@ type stubSource struct {
 	search   func(context.Context, string, int, int) ([]model.Track, error)
 }
 
+type rankingStubSource struct {
+	stubSource
+	rankings []model.Ranking
+	ranking  func(context.Context, string) (model.Playlist, error)
+}
+
+func (s rankingStubSource) Rankings(context.Context) ([]model.Ranking, error) {
+	return s.rankings, nil
+}
+
+func (s rankingStubSource) Ranking(ctx context.Context, id string) (model.Playlist, error) {
+	if s.ranking != nil {
+		return s.ranking(ctx, id)
+	}
+	return model.Playlist{}, errors.New("unexpected native ranking")
+}
+
 func (s stubSource) Playlist(ctx context.Context, id string) (model.Playlist, error) {
 	if s.playlist != nil {
 		return s.playlist(ctx, id)
@@ -217,6 +234,40 @@ func TestUnknownSourceAndAbsentGateway(t *testing.T) {
 	manager = New(nil, nil, true, nil)
 	if _, err := manager.Resolve(context.Background(), "qq", model.Track{ID: "MID"}, ""); err == nil {
 		t.Fatal("missing gateway accepted")
+	}
+}
+
+func TestRankingCatalogAndSubscriptionStayNative(t *testing.T) {
+	var nativeCalls int
+	rankings := []model.Ranking{{ID: "26", Name: "QQ榜单", Category: "热榜", TrackCount: 100, UpdateFrequency: "每日"}}
+	source := rankingStubSource{
+		rankings: rankings,
+		ranking: func(ctx context.Context, id string) (model.Playlist, error) {
+			nativeCalls++
+			if id != "26" {
+				t.Errorf("ranking ID changed: %q", id)
+			}
+			return model.Playlist{ID: id, Name: "QQ榜单", Tracks: []model.Track{}, ReportedCount: 0}, nil
+		},
+	}
+	gateway := &stubGateway{}
+	manager := New(map[string]Source{"qq": source}, gateway, true, nil)
+	got, err := manager.Rankings(context.Background(), "qq")
+	if err != nil || !reflect.DeepEqual(got, rankings) {
+		t.Fatalf("ranking directory failed: %+v %v", got, err)
+	}
+	playlist, err := manager.PlaylistFor(context.Background(), "qq", "ranking", "26")
+	if err != nil || playlist.FetchedVia != "native" || playlist.ID != "26" {
+		t.Fatalf("native ranking read failed: %+v %v", playlist, err)
+	}
+	if nativeCalls != 1 || gateway.playlistCalls != 0 {
+		t.Fatalf("ranking read used wrong source: native=%d gateway=%d", nativeCalls, gateway.playlistCalls)
+	}
+	if _, err := manager.PlaylistFor(context.Background(), "qq", "unsupported", "26"); err == nil {
+		t.Fatal("accepted unsupported subscription source type")
+	}
+	if _, err := manager.Rankings(context.Background(), "unknown"); err == nil {
+		t.Fatal("accepted unsupported ranking platform")
 	}
 }
 

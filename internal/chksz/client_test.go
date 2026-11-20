@@ -376,6 +376,29 @@ func TestRequestsRespectRollingRateWindow(t *testing.T) {
 	}
 }
 
+func TestRequestsAllowExactlyTwentyBeforeRollingWindowBlocks(t *testing.T) {
+	var calls atomic.Int32
+	client, _ := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		fmt.Fprint(w, `{"tracks":[]}`)
+	})
+	client.rateLimit = 20
+	client.rateWindow = time.Second
+	for i := 0; i < 20; i++ {
+		if _, err := client.Playlist(context.Background(), "123"); err != nil {
+			t.Fatalf("request %d unexpectedly failed: %v", i+1, err)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if _, err := client.Playlist(ctx, "123"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("21st request did not wait for the rolling window: %v", err)
+	}
+	if calls.Load() != 20 {
+		t.Fatalf("rolling limiter allowed %d requests at the exact boundary", calls.Load())
+	}
+}
+
 func TestRateWindowCancellationDoesNotConsumeSlot(t *testing.T) {
 	var calls atomic.Int32
 	client, _ := testClient(t, func(w http.ResponseWriter, _ *http.Request) {

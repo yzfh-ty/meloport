@@ -149,7 +149,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 		if found == nil {
 			return errors.New("playlist preview requires -task matching a configured task")
 		}
-		playlist, err := metadata.Playlist(ctx, found.Platform, found.PlaylistID)
+		task := found.Model()
+		playlist, err := metadata.PlaylistFor(ctx, task.Platform, task.SourceType, task.SourceID)
 		if err != nil {
 			return err
 		}

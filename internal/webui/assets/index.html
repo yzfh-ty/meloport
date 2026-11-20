@@ -29,6 +29,10 @@
         <circle cx="12" cy="12" r="9" />
         <path d="M12 7v5l3 2" />
       </symbol>
+      <symbol id="icon-list" viewBox="0 0 24 24">
+        <path d="M8 6h13M8 12h13M8 18h13" />
+        <path d="M3 6h.01M3 12h.01M3 18h.01" />
+      </symbol>
       <symbol id="icon-settings" viewBox="0 0 24 24">
         <path
           d="m10 3-.6 2.2-2 .9-2.1-.6-2 3.4 1.6 1.6v2.4l-1.6 1.6 2 3.4 2.2-.5 1.9 1L10 21h4l.6-2.6 1.9-1 2.2.5 2-3.4-1.6-1.6v-2.4l1.6-1.6-2-3.4-2.1.6-2-.9L14 3z"
@@ -147,6 +151,10 @@
             <a href="#search" data-nav="search" aria-label="歌曲检索" title="歌曲检索">
               <svg class="icon" aria-hidden="true"><use href="#icon-search" /></svg>
               <span class="nav-label">歌曲检索</span>
+            </a>
+            <a href="#rankings" data-nav="rankings" aria-label="排行榜" title="排行榜">
+              <svg class="icon" aria-hidden="true"><use href="#icon-list" /></svg>
+              <span class="nav-label">排行榜</span>
             </a>
             <a href="#history" data-nav="history" aria-label="运行记录" title="运行记录">
               <svg class="icon" aria-hidden="true"><use href="#icon-clock" /></svg>
@@ -513,6 +521,67 @@
           </section>
 
           <section
+            id="view-rankings"
+            data-view="rankings"
+            aria-labelledby="rankings-title"
+            hidden
+          >
+            <div class="page-heading">
+              <div class="page-title-row">
+                <button
+                  id="mobile-menu-rankings"
+                  class="icon-button mobile-menu-button"
+                  type="button"
+                  aria-label="打开导航"
+                  title="打开导航"
+                  aria-controls="navigation-drawer"
+                  aria-expanded="false"
+                >
+                  <svg class="icon" aria-hidden="true"><use href="#icon-menu" /></svg>
+                </button>
+                <h1 id="rankings-title" tabindex="-1">排行榜</h1>
+              </div>
+              <button id="rankings-refresh" class="button button-secondary" type="button">
+                <svg class="icon" aria-hidden="true"><use href="#icon-refresh" /></svg>刷新榜单
+              </button>
+            </div>
+            <section class="panel rankings-panel" aria-label="平台排行榜">
+              <div class="ranking-toolbar">
+                <div class="segmented-control" id="rankings-platform" role="tablist" aria-label="音乐平台">
+                  <button type="button" role="tab" aria-selected="true" data-platform="netease">网易云音乐</button>
+                  <button type="button" role="tab" aria-selected="false" data-platform="qq">QQ 音乐</button>
+                  <button type="button" role="tab" aria-selected="false" data-platform="kugou">酷狗音乐</button>
+                </div>
+                <div class="ranking-filters">
+                  <label class="sr-only" for="rankings-filter">筛选榜单</label>
+                  <svg class="icon" aria-hidden="true"><use href="#icon-search" /></svg>
+                  <input id="rankings-filter" type="search" placeholder="搜索榜单" autocomplete="off" />
+                  <label class="sr-only" for="rankings-category">榜单分类</label>
+                  <select id="rankings-category"><option value="">全部分类</option></select>
+                </div>
+              </div>
+              <div id="rankings-error" class="inline-error ranking-error" role="alert" hidden>
+                <span id="rankings-error-message"></span>
+                <button id="rankings-retry" class="button button-small button-secondary" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-refresh" /></svg>重试</button>
+              </div>
+              <div id="rankings-loading" class="loading-state" role="status" hidden><span class="spinner"></span>正在读取平台榜单…</div>
+              <div id="rankings-empty" class="empty-state compact" hidden>
+                <div class="empty-icon"><svg class="icon" aria-hidden="true"><use href="#icon-list" /></svg></div>
+                <h3>没有匹配的榜单</h3><p>尝试修改搜索关键词或分类。</p>
+              </div>
+              <div id="rankings-no-data" class="empty-state" hidden>
+                <div class="empty-icon"><svg class="icon" aria-hidden="true"><use href="#icon-list" /></svg></div>
+                <h3>暂时无法读取榜单</h3><p>平台目录读取失败，请稍后重试。</p>
+              </div>
+              <table id="rankings-table" class="data-table ranking-table" hidden>
+                <thead><tr><th scope="col">榜单</th><th scope="col">分类</th><th scope="col">歌曲数</th><th scope="col">更新频率</th><th scope="col" class="actions-heading">操作</th></tr></thead>
+                <tbody id="rankings-body"></tbody>
+              </table>
+              <div class="panel-footer"><span id="rankings-summary">—</span><span id="rankings-fetched-at">—</span></div>
+            </section>
+          </section>
+
+          <section
             id="view-history"
             data-view="history"
             aria-labelledby="history-title"
@@ -832,6 +901,14 @@
               </div>
             </div>
             <div class="field">
+              <label for="task-source-type">订阅来源</label>
+              <select id="task-source-type" name="source_type">
+                <option value="playlist">普通歌单</option>
+                <option value="ranking">排行榜</option>
+              </select>
+              <p class="field-hint">排行榜会随平台当前榜单周期同步。</p>
+            </div>
+            <div id="task-playlist-field" class="field">
               <label for="task-playlist"
                 >歌单链接或 ID <span class="required-mark">*</span></label
               ><textarea
@@ -847,6 +924,12 @@
               <p id="task-playlist-hint" class="field-hint">
                 支持网易云完整歌单链接或歌单 ID。
               </p>
+            </div>
+            <div id="task-ranking-field" class="field" hidden>
+              <label for="task-source-id">排行榜 ID <span class="required-mark">*</span></label>
+              <input id="task-source-id" name="source_id" type="text" inputmode="numeric" maxlength="20" placeholder="输入排行榜 ID" aria-describedby="task-source-id-hint task-source-id-error" />
+              <span id="task-source-id-error" class="field-error" hidden></span>
+              <p id="task-source-id-hint" class="field-hint">排行榜 ID 来自排行榜页面，平台之间不能混用。</p>
             </div>
             <details class="advanced-fields">
               <summary>
@@ -932,19 +1015,19 @@
       aria-labelledby="preview-title"
     >
       <div class="modal-header">
-        <h2 id="preview-title">歌单预览</h2>
+        <h2 id="preview-title">来源预览</h2>
         <button
           class="icon-button"
           type="button"
           data-close="preview-dialog"
-          aria-label="关闭歌单预览"
+          aria-label="关闭来源预览"
         >
           <svg class="icon" aria-hidden="true"><use href="#icon-close" /></svg>
         </button>
       </div>
       <div class="modal-body">
         <div id="preview-loading" class="loading-state" role="status">
-          <span class="spinner"></span>正在读取平台歌单…
+          <span class="spinner"></span>正在读取平台来源…
         </div>
         <div id="preview-error" class="inline-error" role="alert" hidden></div>
         <div id="preview-content" hidden>
@@ -973,6 +1056,9 @@
         </div>
       </div>
       <div class="modal-footer">
+        <button id="preview-subscribe" class="button button-primary" type="button" hidden>
+          <svg class="icon" aria-hidden="true"><use href="#icon-plus" /></svg>订阅排行榜
+        </button>
         <button
           class="button button-secondary"
           type="button"

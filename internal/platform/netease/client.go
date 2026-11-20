@@ -20,6 +20,7 @@ import (
 const (
 	maxPlaylistTracks = 100000
 	detailBatchSize   = 1000
+	maxRankings       = 1000
 )
 
 type Options struct {
@@ -163,6 +164,56 @@ func (c *Client) Playlist(ctx context.Context, id string) (model.Playlist, error
 		result.Tracks = append(result.Tracks, track)
 	}
 	return result, nil
+}
+
+// Rankings reads the public chart directory exposed by the NetEase web client.
+// NetEase chart IDs are playlist IDs, so Ranking can reuse the validated native
+// playlist reader below without involving the ChKSz gateway.
+func (c *Client) Rankings(ctx context.Context) ([]model.Ranking, error) {
+	// NetEase currently emits updateFrequency twice in each chart object: an
+	// initial null field followed by the populated value. The platform HTTP
+	// client otherwise rejects duplicate keys, so permit this one known field;
+	// all other duplicate fields remain invalid.
+	root, err := c.http.JSONAllowDuplicateKeys(ctx, http.MethodGet, c.base+"/api/toplist", nil, c.headers(), "updateFrequency")
+	if err != nil {
+		return nil, err
+	}
+	if err := responseOK(root); err != nil {
+		return nil, err
+	}
+	raw, ok := root["list"].([]any)
+	if !ok || len(raw) > maxRankings {
+		return nil, errors.New("NetEase ranking catalog is invalid")
+	}
+	items := make([]model.Ranking, 0, len(raw))
+	for _, value := range raw {
+		object, ok := value.(map[string]any)
+		if !ok {
+			return nil, errors.New("NetEase ranking catalog contains an invalid entry")
+		}
+		id := text(object, "id")
+		if !validID(id) {
+			return nil, errors.New("NetEase ranking catalog contains an invalid ID")
+		}
+		name := text(object, "name")
+		if name == "" {
+			return nil, errors.New("NetEase ranking catalog contains an unnamed entry")
+		}
+		items = append(items, model.Ranking{ID: id, Name: name, TrackCount: intValue(object["trackCount"]), UpdateFrequency: text(object, "updateFrequency")})
+	}
+	return items, nil
+}
+
+func (c *Client) Ranking(ctx context.Context, id string) (model.Playlist, error) {
+	return c.Playlist(ctx, id)
+}
+
+func intValue(value any) int {
+	n, ok := integer(value)
+	if !ok || n < 0 || n > int64(maxPlaylistTracks) {
+		return 0
+	}
+	return int(n)
 }
 
 func (c *Client) songDetails(ctx context.Context, ids []string) ([]model.Track, error) {

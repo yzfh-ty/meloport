@@ -31,6 +31,10 @@ type PlaylistReader interface {
 	Playlist(context.Context, string, string) (model.Playlist, error)
 }
 
+type typedPlaylistReader interface {
+	PlaylistFor(context.Context, string, string, string) (model.Playlist, error)
+}
+
 type AudioResolver interface {
 	Resolve(context.Context, string, model.Track, string) (model.ResolvedTrack, error)
 }
@@ -42,6 +46,13 @@ func (p legacyProvider) Playlist(ctx context.Context, source, id string) (model.
 		return model.Playlist{}, errors.New("legacy provider only supports netease")
 	}
 	return p.Provider.Playlist(ctx, id)
+}
+
+func (p legacyProvider) PlaylistFor(ctx context.Context, source, sourceType, id string) (model.Playlist, error) {
+	if sourceType != "" && sourceType != "playlist" {
+		return model.Playlist{}, errors.New("legacy provider does not support ranking sources")
+	}
+	return p.Playlist(ctx, source, id)
 }
 
 func (p legacyProvider) Resolve(ctx context.Context, source string, track model.Track, quality string) (model.ResolvedTrack, error) {
@@ -148,7 +159,22 @@ func (e *Engine) Run(ctx context.Context, task model.Task) (summary Summary, ret
 	if err != nil {
 		return summary, fmt.Errorf("resolve task output directory: %w", err)
 	}
-	playlist, err := e.reader.Playlist(ctx, providerName, task.PlaylistID)
+	sourceType := task.SourceType
+	if sourceType == "" {
+		sourceType = "playlist"
+	}
+	sourceID := task.SourceID
+	if sourceID == "" {
+		sourceID = task.PlaylistID
+	}
+	var playlist model.Playlist
+	if typed, ok := e.reader.(typedPlaylistReader); ok {
+		playlist, err = typed.PlaylistFor(ctx, providerName, sourceType, sourceID)
+	} else if sourceType == "playlist" {
+		playlist, err = e.reader.Playlist(ctx, providerName, sourceID)
+	} else {
+		err = errors.New("ranking source requires a typed playlist reader")
+	}
 	if err != nil {
 		return summary, fmt.Errorf("read playlist: %w", err)
 	}

@@ -18,6 +18,17 @@ type Playlist struct {
 	FetchedVia    string  `json:"fetched_via,omitempty"`
 }
 
+// Ranking is a native platform chart that can be subscribed to as a dynamic
+// source. The ID is platform-specific and must not be treated as a playlist
+// ID by callers.
+type Ranking struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Category        string `json:"category,omitempty"`
+	TrackCount      int    `json:"track_count,omitempty"`
+	UpdateFrequency string `json:"update_frequency,omitempty"`
+}
+
 type ResolvedTrack struct {
 	URL    string
 	Format string
@@ -33,6 +44,10 @@ type DownloadResult struct {
 // Task is the fully validated, effective configuration for one subscription.
 type Task struct {
 	ID         string
+	SourceType string
+	SourceID   string
+	// PlaylistID is retained for callers constructing legacy tasks directly.
+	// Configuration-backed tasks always populate SourceID as the canonical value.
 	PlaylistID string
 	Platform   string
 	Quality    string

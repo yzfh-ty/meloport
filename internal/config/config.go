@@ -93,6 +93,8 @@ type Task struct {
 	ID         string `yaml:"id"`
 	Platform   string `yaml:"platform"`
 	Playlist   string `yaml:"playlist"`
+	SourceType string `yaml:"source_type"`
+	SourceID   string `yaml:"source_id"`
 	Schedule   string `yaml:"schedule"`
 	Quality    string `yaml:"quality"`
 	Directory  string `yaml:"directory"`
@@ -103,7 +105,15 @@ type Task struct {
 func (t Task) IsEnabled() bool { return t.Enabled == nil || *t.Enabled }
 
 func (t Task) Model() model.Task {
-	return model.Task{ID: t.ID, Platform: t.Platform, PlaylistID: t.PlaylistID, Quality: t.Quality, Directory: t.Directory}
+	sourceID := t.SourceID
+	if sourceID == "" {
+		sourceID = t.PlaylistID
+	}
+	sourceType := t.SourceType
+	if sourceType == "" {
+		sourceType = "playlist"
+	}
+	return model.Task{ID: t.ID, SourceType: sourceType, SourceID: sourceID, PlaylistID: t.PlaylistID, Platform: t.Platform, Quality: t.Quality, Directory: t.Directory}
 }
 
 func defaults() Config {
@@ -223,9 +233,33 @@ func (c *Config) validate(baseDir string) error {
 		if t.Platform == "" {
 			t.Platform = "netease"
 		}
-		t.PlaylistID, err = ParsePlaylistFor(t.Platform, t.Playlist)
-		if err != nil {
-			return fmt.Errorf("task %s: %w", t.ID, err)
+		if t.SourceType == "" {
+			t.SourceType = "playlist"
+		}
+		switch t.SourceType {
+		case "playlist":
+			if t.Playlist != "" && t.SourceID != "" {
+				return fmt.Errorf("task %s: provide either playlist or source_id for a playlist task", t.ID)
+			}
+			inputID := t.Playlist
+			if inputID == "" {
+				inputID = t.SourceID
+			}
+			t.PlaylistID, err = ParsePlaylistFor(t.Platform, inputID)
+			if err != nil {
+				return fmt.Errorf("task %s: %w", t.ID, err)
+			}
+			t.SourceID = t.PlaylistID
+		case "ranking":
+			if t.Playlist != "" {
+				return fmt.Errorf("task %s: ranking tasks must use source_id, not playlist", t.ID)
+			}
+			t.SourceID, err = ParseRankingFor(t.Platform, t.SourceID)
+			if err != nil {
+				return fmt.Errorf("task %s: %w", t.ID, err)
+			}
+		default:
+			return fmt.Errorf("task %s: source_type must be playlist or ranking", t.ID)
 		}
 		if t.Schedule == "" {
 			t.Schedule = c.Schedule
@@ -263,6 +297,18 @@ func ParsePlaylistFor(source, value string) (string, error) {
 		return qq.NormalizePlaylist(value)
 	case "kugou":
 		return kugou.NormalizePlaylist(value)
+	default:
+		return "", errors.New("platform must be netease, qq or kugou")
+	}
+}
+
+func ParseRankingFor(source, value string) (string, error) {
+	if strings.TrimSpace(value) != value || !idPattern.MatchString(value) {
+		return "", errors.New("ranking source ID must be a positive integer")
+	}
+	switch source {
+	case "netease", "qq", "kugou":
+		return value, nil
 	default:
 		return "", errors.New("platform must be netease, qq or kugou")
 	}

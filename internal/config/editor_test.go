@@ -81,6 +81,9 @@ func TestEditorTasksReadRawValues(t *testing.T) {
 	if first.Schedule != "" || first.Quality != "" || first.Platform != "" || first.Directory != "original-folder" || !first.Enabled {
 		t.Fatalf("inherited/defaulted values leaked into raw DTO: %+v", first)
 	}
+	if first.SourceType != "playlist" || first.SourceID != "123" || first.Playlist != "123" {
+		t.Fatalf("legacy playlist source was not represented for the editor: %+v", first)
+	}
 	if tasks[1].Enabled || tasks[1].Schedule != "0 20 * * *" || tasks[1].Quality != "flac" {
 		t.Fatalf("wrong raw override: %+v", tasks[1])
 	}
@@ -181,6 +184,48 @@ func TestEditorCreateDeleteAndIdentityProtection(t *testing.T) {
 		t.Fatal("task delete removed audio", err)
 	}
 	noEditorTemps(t, path)
+}
+
+func TestEditorRankingSourceFieldsUseExplicitYAMLShape(t *testing.T) {
+	path, editor := editorFixture(t, editorExample)
+	input := TaskInput{ID: "ranking-task", Platform: "qq", SourceType: "ranking", SourceID: "26", Enabled: true}
+	if _, err := editor.Upsert("", input, true); err != nil {
+		t.Fatal(err)
+	}
+	raw := string(editorBytes(t, path))
+	if !strings.Contains(raw, "source_type: ranking") || !strings.Contains(raw, "source_id: '26'") && !strings.Contains(raw, "source_id: \"26\"") && !strings.Contains(raw, "source_id: 26") {
+		t.Fatalf("ranking fields were not persisted: %s", raw)
+	}
+	if strings.Contains(raw, "ranking-task\n    playlist:") {
+		t.Fatal("ranking task retained legacy playlist field")
+	}
+	tasks, err := editor.Tasks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got TaskInput
+	for _, task := range tasks {
+		if task.ID == input.ID {
+			got = task
+		}
+	}
+	if got.SourceType != "ranking" || got.SourceID != "26" || got.Playlist != "" {
+		t.Fatalf("ranking fields were not read back: %+v", got)
+	}
+}
+
+func TestEditorPlaylistSourceKeepsLegacyYAMLShape(t *testing.T) {
+	path, editor := editorFixture(t, editorExample)
+	if _, err := editor.Upsert("", TaskInput{ID: "playlist-task", Platform: "netease", SourceType: "playlist", SourceID: "123", Enabled: true}, true); err != nil {
+		t.Fatal(err)
+	}
+	raw := string(editorBytes(t, path))
+	if !strings.Contains(raw, "playlist: '123'") && !strings.Contains(raw, "playlist: 123") {
+		t.Fatalf("legacy playlist field was not persisted: %s", raw)
+	}
+	if strings.Contains(raw, "source_type: playlist") || strings.Contains(raw, "source_id: 123") {
+		t.Fatal("ordinary playlist gained explicit source fields")
+	}
 }
 
 func TestEditorInvalidCandidateLeavesOriginalExact(t *testing.T) {

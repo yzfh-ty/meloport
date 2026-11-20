@@ -30,6 +30,7 @@ const (
 	maxPages       = 100
 	chainPageSize  = 50
 	globalPageSize = 100
+	maxRankings    = 1000
 	// Public platform protocol constants, not a user's ChKSz key or cookie.
 	webSigningMaterial     = "NVPh5oo715z5DIWAeQlhMDsWXXQV4hwt"
 	androidSigningMaterial = "OIlwieks28dk2k092lksi2UIkp"
@@ -146,6 +147,158 @@ func (c *Client) Playlist(ctx context.Context, raw string) (model.Playlist, erro
 	return c.resolveChain(ctx, id, chain)
 }
 
+// Rankings reads the public mobile chart directory. The returned rankid is a
+// Kugou chart identity and is intentionally not treated as a playlist ID.
+func (c *Client) Rankings(ctx context.Context) ([]model.Ranking, error) {
+	uri := c.endpoint("https://m.kugou.com", "/rank/list?json=true")
+	headers := http.Header{"Accept": {"application/json"}, "Referer": {"https://m.kugou.com/"}}
+	root, err := c.http.JSON(ctx, http.MethodGet, uri, nil, headers)
+	if err != nil {
+		return nil, err
+	}
+	rank := platform.Object(root["rank"])
+	raw := platform.Slice(rank["list"])
+	if raw == nil || len(raw) > maxRankings {
+		return nil, errors.New("Kugou ranking catalog is invalid")
+	}
+	if total, ok := platform.Integer(rank["total"]); !ok || total < 0 || int(total) != len(raw) {
+		return nil, errors.New("Kugou ranking catalog is incomplete")
+	}
+	items := make([]model.Ranking, 0, len(raw))
+	for _, value := range raw {
+		object := platform.Object(value)
+		if object == nil {
+			return nil, errors.New("Kugou ranking catalog contains an invalid entry")
+		}
+		id := platform.Text(object, "rankid", "rank_id")
+		if !digits.MatchString(id) {
+			return nil, errors.New("Kugou ranking catalog contains an invalid ID")
+		}
+		if playable, ok := platform.Integer(object["isvol"]); !ok || playable != 1 {
+			continue
+		}
+		name := platform.Text(object, "rankname", "name")
+		if strings.TrimSpace(name) == "" {
+			return nil, errors.New("Kugou ranking catalog contains an unnamed entry")
+		}
+		extra := platform.Object(platform.Object(object["extra"])["resp"])
+		items = append(items, model.Ranking{ID: id, Name: name, TrackCount: intField(extra, "all_total"), UpdateFrequency: platform.Text(object, "update_frequency", "updateFrequency")})
+	}
+	return items, nil
+}
+
+// Ranking reads native chart members and preserves the Kugou hash/audio_id
+// identity needed by the resolver's later identity confirmation step.
+func (c *Client) Ranking(ctx context.Context, id string) (model.Playlist, error) {
+	if !digits.MatchString(id) {
+		return model.Playlist{}, errors.New("Kugou ranking ID must be a positive integer")
+	}
+	tracks := make([]model.Track, 0, 100)
+	seen := make(map[string]bool)
+	total := -1
+	name := ""
+	for page := 1; page <= maxPages; page++ {
+		query := url.Values{"version": {"9108"}, "ranktype": {"1"}, "plat": {"0"}, "pagesize": {"100"}, "area_code": {"1"}, "page": {strconv.Itoa(page)}, "rankid": {id}, "with_res_tag": {"0"}, "show_portrait_mv": {"1"}}
+		value, err := c.request(ctx, http.MethodGet, "https://mobilecdnbj.kugou.com", "/api/v3/rank/song", query, nil, false, false)
+		if err != nil {
+			return model.Playlist{}, err
+		}
+		data := platform.Object(value)
+		raw := platform.Slice(data["info"])
+		if raw == nil {
+			raw = platform.Slice(data["list"])
+		}
+		if raw == nil || len(raw) > 100 {
+			return model.Playlist{}, errors.New("Kugou ranking song list is invalid")
+		}
+		if declared, ok := platform.Integer(data["total"]); ok {
+			if declared < 0 || declared > maxTracks {
+				return model.Playlist{}, errors.New("Kugou ranking total is invalid")
+			}
+			if total < 0 {
+				total = int(declared)
+			} else if total != int(declared) {
+				return model.Playlist{}, errors.New("Kugou ranking changed during pagination")
+			}
+		}
+		if name == "" {
+			name = platform.Text(data, "rankname", "name")
+		}
+		for _, item := range raw {
+			track, err := rankingTrack(item)
+			if err != nil {
+				return model.Playlist{}, err
+			}
+			if seen[track.ID] {
+				return model.Playlist{}, errors.New("Kugou ranking contains duplicate song identities")
+			}
+			seen[track.ID] = true
+			tracks = append(tracks, track)
+		}
+		if total >= 0 {
+			if len(tracks) == total {
+				break
+			}
+			if len(tracks) > total || len(raw) == 0 {
+				return model.Playlist{}, errors.New("Kugou ranking pagination is incomplete")
+			}
+		} else if len(raw) < 100 {
+			break
+		}
+		if page == maxPages {
+			return model.Playlist{}, errors.New("Kugou ranking exceeds the bounded pagination budget")
+		}
+	}
+	if total < 0 {
+		total = len(tracks)
+	}
+	return model.Playlist{ID: id, Name: name, Tracks: tracks, ReportedCount: total}, nil
+}
+
+func intField(object map[string]any, fields ...string) int {
+	for _, field := range fields {
+		if n, ok := platform.Integer(object[field]); ok && n >= 0 && n <= maxTracks {
+			return int(n)
+		}
+	}
+	return 0
+}
+
+func rankingTrack(raw any) (model.Track, error) {
+	object := platform.Object(raw)
+	if object == nil {
+		return model.Track{}, errors.New("Kugou ranking returned a malformed song")
+	}
+	hash := strings.ToLower(platform.Text(object, "hash", "FileHash"))
+	audioID := platform.Text(object, "audio_id", "Audioid", "audioid")
+	if !hashPattern.MatchString(hash) && !digits.MatchString(audioID) {
+		return model.Track{}, errors.New("Kugou ranking song has no valid hash or audio ID")
+	}
+	id := hash
+	if id == "" {
+		id = audioID
+	}
+	name := html.UnescapeString(platform.Text(object, "songname", "SongName", "name"))
+	artists := platform.Artists(object["authors"])
+	if len(artists) == 0 {
+		artists = splitArtists(platform.Text(object, "author_name", "SingerName", "singername", "author"))
+	}
+	for i := range artists {
+		artists[i] = html.UnescapeString(artists[i])
+	}
+	if strings.TrimSpace(name) == "" || len(artists) == 0 {
+		return model.Track{}, errors.New("Kugou ranking song has incomplete metadata")
+	}
+	album := html.UnescapeString(platform.Text(object, "album_name", "AlbumName", "remark"))
+	duration := 0
+	if value, ok := platform.Integer(object["duration"]); ok && value >= 0 && value <= 24*60*60 {
+		duration = int(value)
+	} else if value, ok := platform.Integer(object["timelength"]); ok && value >= 0 && value <= 24*60*60*1000 {
+		duration = int(value / 1000)
+	}
+	return model.Track{ID: id, Hash: hash, Name: name, Artists: artists, Album: album, Duration: duration}, nil
+}
+
 func (c *Client) endpoint(origin, path string) string {
 	if c.baseURL != "" {
 		return c.baseURL + path
@@ -177,6 +330,11 @@ func (c *Client) request(ctx context.Context, method, origin, path string, query
 		uri += "?" + query.Encode()
 	}
 	h := c.headers()
+	// Never send an optional platform cookie over a clear-text endpoint. This
+	// matters for the legacy mobile rank API, which is still HTTP in some regions.
+	if parsed, parseErr := url.Parse(uri); parseErr == nil && parsed.Scheme != "https" {
+		h.Del("Cookie")
+	}
 	if payload != nil {
 		h.Set("Content-Type", "application/json")
 	}

@@ -81,6 +81,100 @@ func TestNormalizePlaylist(t *testing.T) {
 	}
 }
 
+func TestRankingsCatalogAndDetailPreserveNativeHashWithoutHTTPCookie(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Cookie") != "" {
+			t.Error("Kugou cookie was sent to an HTTP ranking endpoint")
+		}
+		switch r.URL.Path {
+		case "/rank/list":
+			jsonReply(t, w, map[string]any{"rank": map[string]any{"total": 1, "list": []any{map[string]any{"rankid": 8888, "rankname": "TOP500", "isvol": 1, "update_frequency": "每天", "extra": map[string]any{"resp": map[string]any{"all_total": 500}}}}}})
+		case "/api/v3/rank/song":
+			jsonReply(t, w, map[string]any{"errcode": 0, "data": map[string]any{"total": 1, "info": []any{map[string]any{"hash": hashFor(1), "audio_id": 42, "songname": "榜单歌曲", "authors": []any{map[string]any{"author_name": "歌手"}}, "remark": "专辑", "duration": 180}}}})
+		default:
+			t.Errorf("unexpected Kugou ranking endpoint %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	})
+	client.cookie = "KUGOU_COOKIE=fixture"
+	items, err := client.Rankings(context.Background())
+	if err != nil || len(items) != 1 || items[0].ID != "8888" || items[0].TrackCount != 500 {
+		t.Fatalf("Kugou ranking catalog failed: %+v %v", items, err)
+	}
+	playlist, err := client.Ranking(context.Background(), "8888")
+	if err != nil || playlist.ReportedCount != 1 || len(playlist.Tracks) != 1 || playlist.Tracks[0].Hash != hashFor(1) || playlist.Tracks[0].ID != hashFor(1) {
+		t.Fatalf("Kugou ranking detail failed: %+v %v", playlist, err)
+	}
+}
+
+func TestRankingsCatalogAndDetailStripCookieFromHTTP(t *testing.T) {
+	const cookie = "unit-test"
+	var catalog, detail atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Cookie") != "" {
+			t.Errorf("Kugou cookie leaked over HTTP: %q", r.Header.Get("Cookie"))
+		}
+		switch r.URL.Path {
+		case "/rank/list":
+			catalog.Add(1)
+			if r.URL.Query().Get("json") != "true" {
+				t.Error("ranking catalog did not request JSON")
+			}
+			jsonReply(t, w, map[string]any{"rank": map[string]any{"total": 1, "list": []any{map[string]any{"rankid": 6666, "rankname": "飙升榜", "isvol": 1, "update_frequency": "每天", "extra": map[string]any{"resp": map[string]any{"all_total": 100}}}}}})
+		case "/api/v3/rank/song":
+			detail.Add(1)
+			if r.URL.Query().Get("rankid") != "6666" {
+				t.Error("wrong Kugou ranking ID")
+			}
+			jsonReply(t, w, map[string]any{"status": 1, "data": map[string]any{"rankname": "飙升榜", "info": []any{map[string]any{"hash": hashFor(1), "songname": "Song", "author_name": "Singer", "album_name": "Album", "duration": 180}}}})
+		default:
+			t.Errorf("unexpected Kugou ranking path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := New(Options{BaseURL: server.URL, Cookie: cookie, HTTP: platform.NewHTTP(server.Client(), time.Second, 0)})
+	catalogue, err := client.Rankings(context.Background())
+	if err != nil || len(catalogue) != 1 || catalogue[0].ID != "6666" || catalogue[0].Name != "飙升榜" || catalogue[0].TrackCount != 100 {
+		t.Fatalf("bad Kugou ranking catalog: %+v %v", catalogue, err)
+	}
+	list, err := client.Ranking(context.Background(), "6666")
+	if err != nil || list.ID != "6666" || len(list.Tracks) != 1 || list.Tracks[0].ID != hashFor(1) || list.Tracks[0].Hash != hashFor(1) {
+		t.Fatalf("bad Kugou ranking detail: %+v %v", list, err)
+	}
+	if catalog.Load() != 1 || detail.Load() != 1 {
+		t.Fatalf("unexpected Kugou ranking calls catalog=%d detail=%d", catalog.Load(), detail.Load())
+	}
+}
+
+func TestRankingsRejectInvalidEntries(t *testing.T) {
+	for _, value := range []map[string]any{
+		{"rankid": "bad", "rankname": "Bad", "isvol": 1},
+		{"rankid": 6666, "rankname": "", "isvol": 1},
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			jsonReply(t, w, map[string]any{"rank": map[string]any{"total": 1, "list": []any{value}}})
+		}))
+		client := New(Options{BaseURL: server.URL, HTTP: platform.NewHTTP(server.Client(), time.Second, 0)})
+		_, err := client.Rankings(context.Background())
+		server.Close()
+		if err == nil {
+			t.Fatalf("accepted malformed Kugou ranking entry: %+v", value)
+		}
+	}
+}
+
+func TestRankingRejectsInvalidSongIdentity(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		jsonReply(t, w, map[string]any{"status": 1, "data": map[string]any{"info": []any{map[string]any{"songname": "Song", "author_name": "Singer"}}}})
+	}))
+	defer server.Close()
+	client := New(Options{BaseURL: server.URL, HTTP: platform.NewHTTP(server.Client(), time.Second, 0)})
+	if _, err := client.Ranking(context.Background(), "6666"); err == nil {
+		t.Fatal("accepted Kugou ranking song without hash/audio identity")
+	}
+}
+
 func TestSignatureCanonicalOrdering(t *testing.T) {
 	const key = "test-signing-material"
 	want := md5.Sum([]byte(key + "a=1b=2" + `{"x":1}` + key))

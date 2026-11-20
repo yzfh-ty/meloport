@@ -19,6 +19,14 @@ type Source interface {
 	Search(context.Context, string, int, int) ([]model.Track, error)
 }
 
+// RankingSource is implemented by native platform readers that expose their
+// public chart directory and chart members. It is intentionally separate from
+// Source so existing readers and extension implementations remain compatible.
+type RankingSource interface {
+	Rankings(context.Context) ([]model.Ranking, error)
+	Ranking(context.Context, string) (model.Playlist, error)
+}
+
 type Gateway interface {
 	Playlist(context.Context, string) (model.Playlist, error)
 	Search(context.Context, string, string, int, int) ([]model.Track, error)
@@ -39,6 +47,45 @@ func New(sources map[string]Source, api Gateway, fallback bool, logger *slog.Log
 }
 
 func (m *Manager) SetFallback(enabled bool) { m.fallback.Store(enabled) }
+
+// Rankings returns native public chart metadata. Charts never fall back to
+// ChKSz because they are platform metadata, not audio resolution.
+func (m *Manager) Rankings(ctx context.Context, source string) ([]model.Ranking, error) {
+	reader, ok := m.sources[source]
+	if !ok {
+		return nil, errors.New("unsupported ranking platform")
+	}
+	ranker, ok := reader.(RankingSource)
+	if !ok {
+		return nil, fmt.Errorf("%s platform does not expose native rankings", source)
+	}
+	return ranker.Rankings(ctx)
+}
+
+// PlaylistFor dispatches a subscription source while keeping ordinary playlist
+// fallback behavior unchanged. Ranking reads are always native-only.
+func (m *Manager) PlaylistFor(ctx context.Context, source, sourceType, id string) (model.Playlist, error) {
+	if sourceType == "" || sourceType == "playlist" {
+		return m.Playlist(ctx, source, id)
+	}
+	if sourceType != "ranking" {
+		return model.Playlist{}, errors.New("unsupported subscription source type")
+	}
+	reader, ok := m.sources[source]
+	if !ok {
+		return model.Playlist{}, errors.New("unsupported ranking platform")
+	}
+	ranker, ok := reader.(RankingSource)
+	if !ok {
+		return model.Playlist{}, fmt.Errorf("%s platform does not expose native rankings", source)
+	}
+	playlist, err := ranker.Ranking(ctx, id)
+	if err != nil {
+		return model.Playlist{}, fmt.Errorf("%s native ranking failed: %w", source, err)
+	}
+	playlist.FetchedVia = "native"
+	return playlist, nil
+}
 
 func (m *Manager) Playlist(ctx context.Context, source, id string) (model.Playlist, error) {
 	reader, ok := m.sources[source]

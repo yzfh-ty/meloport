@@ -34,7 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const $ = (id) => document.getElementById(id);
   const platforms = { netease: '网易云音乐', qq: 'QQ 音乐', kugou: '酷狗音乐' };
-  const titles = { overview: '任务概览', search: '歌曲检索', history: '运行记录', settings: '系统设置' };
+  const titles = { overview: '任务概览', search: '歌曲检索', rankings: '排行榜', history: '运行记录', settings: '系统设置' };
   const qualities = {
     netease: [['lossless', '无损 · lossless'], ['hires', 'Hi-Res · hires'], ['exhigh', '高品质 · exhigh'], ['standard', '标准 · standard'], ['jymaster', '母带 · jymaster'], ['jyeffect', '沉浸环绕 · jyeffect'], ['sky', '沉浸声 · sky']],
     qq: [['flac', '无损 · flac'], ['hires', 'Hi-Res · hires'], ['320k', '320 kbps · 320k'], ['128k', '128 kbps · 128k'], ['master', '母带 · master']],
@@ -49,8 +49,9 @@ document.addEventListener('DOMContentLoaded', () => {
     overview: null, route: '', editTask: null, deleteTask: null,
     taskSignature: '', historySignature: '', historyOptionsSignature: '', settingsDirty: false,
     busy: new Set(), overviewVersion: 0, overviewController: null, overviewPromise: null,
-    previewController: null, pollTimer: null, toastTimer: null, dialogTriggers: new Map(),
-    search: { keyword: '', platform: 'netease', offset: 0, limit: 20, tracks: [], loaded: false, loading: false, controller: null }
+    previewController: null, rankingDetail: null, pollTimer: null, toastTimer: null, dialogTriggers: new Map(),
+    search: { keyword: '', platform: 'netease', offset: 0, limit: 20, tracks: [], loaded: false, loading: false, controller: null },
+    rankings: { platform: 'netease', catalog: {}, loading: false, error: '', filter: '', category: '', controller: null }
   };
 
   function element(tag, className, text) {
@@ -250,7 +251,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function taskInput(task) {
-    return { id: String(task.id), platform: task.platform || 'netease', playlist: task.playlist || '', schedule: task.schedule || '', quality: task.quality || '', directory: task.directory || '', enabled: Boolean(task.enabled) };
+    const sourceType = task.source_type || 'playlist';
+    return { id: String(task.id), platform: task.platform || 'netease', source_type: sourceType, source_id: sourceType === 'ranking' ? task.source_id || '' : '', playlist: task.playlist || '', schedule: task.schedule || '', quality: task.quality || '', directory: task.directory || '', enabled: Boolean(task.enabled) };
   }
 
   function cell(label) {
@@ -282,7 +284,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!state.overview) return;
     const filter = $('task-filter').value.trim().toLocaleLowerCase();
     const tasks = state.overview.tasks;
-    const visible = tasks.filter((task) => `${task.id} ${task.playlist} ${platforms[task.platform] || ''}`.toLocaleLowerCase().includes(filter));
+    const visible = tasks.filter((task) => `${task.id} ${task.playlist || ''} ${task.source_id || ''} ${platforms[task.platform] || ''}`.toLocaleLowerCase().includes(filter));
     const signature = JSON.stringify([visible, filter, [...state.busy], state.overview.api_key_configured, state.overview.queue && state.overview.queue.paused]);
     show('tasks-loading', false);
     show('tasks-empty', tasks.length === 0);
@@ -293,13 +295,14 @@ document.addEventListener('DOMContentLoaded', () => {
     rememberFocus($('tasks-body'), () => {
       const rows = visible.map((task) => {
         const row = element('tr');
-        const identity = cell('任务 / 歌单');
+        const identity = cell('任务 / 来源');
         const identityLayout = element('div', 'task-identity');
         const artwork = element('span', 'playlist-icon');
         artwork.dataset.platform = task.platform;
         artwork.append(icon('music'));
         const name = element('div', 'task-name');
-        const playlist = element('span', 'cell-subtitle playlist-value', task.playlist);
+        const sourceLabel = task.source_type === 'ranking' ? `排行榜 · ${task.source_id || '—'}` : (task.playlist || '—');
+        const playlist = element('span', 'cell-subtitle playlist-value', sourceLabel);
         playlist.title = task.playlist;
         name.append(element('div', 'cell-title', task.id), playlist);
         identityLayout.append(artwork, name);
@@ -332,8 +335,8 @@ document.addEventListener('DOMContentLoaded', () => {
         run.disabled = !task.enabled || task.running || task.queued || Boolean(state.overview.queue && state.overview.queue.paused) || state.busy.has(`task:${task.id}:run`);
         run.title = !task.enabled ? '请先启用任务' : !state.overview.api_key_configured ? '未配置解析密钥时，缺失歌曲无法下载' : '';
         const preview = actionButton('', 'eye', 'icon-button', (event) => previewTask(task, event.currentTarget));
-        preview.setAttribute('aria-label', `预览歌单 ${task.id}`);
-        preview.title = '预览歌单';
+        preview.setAttribute('aria-label', `预览来源 ${task.id}`);
+        preview.title = '预览来源';
         preview.dataset.focusKey = `${task.id}:preview`;
         const edit = actionButton('', 'edit', 'icon-button', (event) => openTask(task, event.currentTarget));
         edit.setAttribute('aria-label', `编辑任务 ${task.id}`);
@@ -403,6 +406,15 @@ document.addEventListener('DOMContentLoaded', () => {
     $('task-quality').replaceChildren(...options);
     $('task-quality').value = options.some((option) => option.value === selected) ? selected : '';
     text('task-playlist-hint', platform === 'qq' ? '支持 QQ 音乐完整歌单链接或歌单 ID。' : platform === 'kugou' ? '支持酷狗歌单分享码、专题 ID（id_开头）或完整分享链接。' : '支持网易云完整歌单链接或歌单 ID。');
+    text('task-source-id-hint', `${platforms[platform] || '当前平台'}排行榜 ID 来自排行榜页面，平台之间不能混用。`);
+  }
+
+  function renderTaskSource() {
+    const ranking = $('task-source-type').value === 'ranking';
+    show('task-playlist-field', !ranking);
+    show('task-ranking-field', ranking);
+    $('task-playlist').required = !ranking;
+    $('task-source-id').required = ranking;
   }
 
   function clearErrors(prefix) {
@@ -440,25 +452,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function validCron(value) { return value.trim().split(/\s+/).length === 5 && !value.includes('=') && !value.startsWith('@'); }
 
-  function openTask(task, trigger) {
+  function openTask(task, trigger, preset = null) {
     state.editTask = task;
     clearErrors('task');
     $('task-form').reset();
-    $('task-id').value = task ? task.id : '';
+    const platform = task ? task.platform : preset ? preset.platform : 'netease';
+    const sourceType = task ? task.source_type || 'playlist' : preset ? preset.sourceType : 'playlist';
+    let taskID = task ? task.id : '';
+    if (preset && !task) {
+      const baseID = `rank-${preset.platform}-${preset.sourceId}`;
+      taskID = baseID;
+      let suffix = 2;
+      while (state.overview && state.overview.tasks.some((item) => String(item.id).toLowerCase() === taskID.toLowerCase())) taskID = `${baseID}-${suffix++}`;
+    }
+    $('task-id').value = taskID;
     $('task-id').readOnly = Boolean(task);
-    $('task-platform').value = task ? task.platform : 'netease';
-    $('task-playlist').value = task ? task.playlist : '';
+    $('task-platform').value = platform;
+    $('task-source-type').value = sourceType;
+    $('task-playlist').value = task ? task.playlist || '' : '';
+    $('task-source-id').value = task ? task.source_id || '' : preset ? preset.sourceId : '';
     $('task-schedule').value = task ? task.schedule || '' : '';
     $('task-directory').value = task ? task.directory || '' : '';
     $('task-enabled').checked = task ? Boolean(task.enabled) : true;
     $('task-form').querySelector('.advanced-fields').open = Boolean(task && (task.schedule || task.quality || task.directory));
     renderTaskQuality($('task-platform').value, task ? task.quality || '' : '');
+    renderTaskSource();
     text('task-dialog-title', task ? '编辑订阅任务' : '新建订阅任务');
     text('task-submit', task ? '保存修改' : '创建任务');
     text('task-schedule-hint', `五字段 cron；留空继承 ${state.overview ? state.overview.schedule : '全局时间'}。`);
     $('task-schedule').placeholder = state.overview ? `继承 ${state.overview.schedule}` : '留空继承全局时间';
     openDialog('task-dialog', trigger);
-    (task ? $('task-playlist') : $('task-id')).focus();
+    (task ? (sourceType === 'ranking' ? $('task-source-id') : $('task-playlist')) : preset ? $('task-id') : $('task-id')).focus();
   }
 
   async function saveTask(event) {
@@ -466,13 +490,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if ($('task-submit').disabled) return;
     clearErrors('task');
     const input = {
-      id: $('task-id').value.trim(), platform: $('task-platform').value, playlist: $('task-playlist').value.trim(),
+      id: $('task-id').value.trim(), platform: $('task-platform').value, source_type: $('task-source-type').value,
+      source_id: $('task-source-id').value.trim(), playlist: $('task-playlist').value.trim(),
       schedule: $('task-schedule').value.trim(), quality: $('task-quality').value, directory: $('task-directory').value.trim(), enabled: $('task-enabled').checked
     };
     const errors = [];
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(input.id) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(input.id)) errors.push({ field: 'task-id', message: '任务标识需为 1–64 位字母、数字、下划线或短横线，并避免系统保留名称。' });
     if (!state.editTask && state.overview && state.overview.tasks.some((task) => String(task.id).toLowerCase() === input.id.toLowerCase())) errors.push({ field: 'task-id', message: '这个任务标识已经存在，请使用其他标识。' });
-    if (!input.playlist) errors.push({ field: 'task-playlist', message: '请填写歌单链接、ID 或分享码。' });
+    if (input.source_type === 'ranking') {
+      if (!/^[1-9][0-9]{0,19}$/.test(input.source_id)) errors.push({ field: 'task-source-id', message: '请输入有效的正整数排行榜 ID。' });
+      input.playlist = '';
+    } else {
+      input.source_id = '';
+      if (!input.playlist) errors.push({ field: 'task-playlist', message: '请填写歌单链接、ID 或分享码。' });
+    }
     if (input.schedule && !validCron(input.schedule)) errors.push({ field: 'task-schedule', message: '请填写五字段 cron；也可留空继承全局时间。' });
     if (errors.length) { formErrors('task', errors); return; }
     const editing = state.editTask;
@@ -495,7 +526,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (state.previewController) state.previewController.abort();
     const controller = new AbortController();
     state.previewController = controller;
-    text('preview-title', `歌单预览 · ${task.id}`);
+    state.rankingDetail = null;
+    show('preview-subscribe', false);
+    text('preview-title', `${task.source_type === 'ranking' ? '排行榜预览' : '歌单预览'} · ${task.id}`);
     show('preview-loading', true);
     show('preview-content', false);
     show('preview-error', false);
@@ -507,7 +540,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!playlist || !Array.isArray(playlist.tracks)) throw new Error('歌单返回了无法识别的曲目列表。');
       const tracks = playlist.tracks;
       const reported = typeof playlist.reported_count === 'number' ? playlist.reported_count : tracks.length;
-      text('preview-title', playlist.name || `歌单预览 · ${task.id}`);
+      text('preview-title', playlist.name || `${task.source_type === 'ranking' ? '排行榜预览' : '歌单预览'} · ${task.id}`);
       text('preview-summary', `${platforms[task.platform] || task.platform} · 共 ${number(reported)} 首歌曲`);
       const source = playlist.fetched_via === 'chksz_fallback' ? ['ChKSz 回退', 'warning'] : playlist.fetched_via === 'native' ? ['平台直连', 'success'] : ['来源未返回', 'neutral'];
       text('preview-source', source[0]);
@@ -734,6 +767,150 @@ document.addEventListener('DOMContentLoaded', () => {
     $('search-results-body').replaceChildren(...rows);
   }
 
+  function rankingItems() {
+    const data = state.rankings;
+    const catalog = data.catalog[data.platform];
+    return catalog && Array.isArray(catalog.items) ? catalog.items : [];
+  }
+
+  function renderRankings() {
+    const data = state.rankings;
+    const items = rankingItems();
+    const filter = data.filter.trim().toLocaleLowerCase();
+    const visible = items.filter((item) => {
+      const haystack = `${item.name || ''} ${item.category || ''} ${item.id || ''}`.toLocaleLowerCase();
+      return (!filter || haystack.includes(filter)) && (!data.category || item.category === data.category);
+    });
+    const categories = [...new Set(items.map((item) => item.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-CN'));
+    const categorySelect = $('rankings-category');
+    const selected = data.category;
+    categorySelect.replaceChildren(element('option', '', '全部分类'));
+    categorySelect.firstElementChild.value = '';
+    categories.forEach((category) => { const option = element('option', '', category); option.value = category; categorySelect.append(option); });
+    categorySelect.value = categories.includes(selected) ? selected : '';
+    data.category = categorySelect.value;
+    show('rankings-loading', data.loading);
+    show('rankings-error', Boolean(data.error));
+    text('rankings-error-message', data.error || '');
+    show('rankings-no-data', !data.loading && !data.error && !data.catalog[data.platform]);
+    show('rankings-empty', !data.loading && !data.error && Boolean(data.catalog[data.platform]) && visible.length === 0);
+    show('rankings-table', !data.loading && !data.error && visible.length > 0);
+    if (!data.loading && !data.error && data.catalog[data.platform] && items.length === 0) {
+      $('rankings-empty').querySelector('h3').textContent = filter || data.category ? '没有匹配的榜单' : '当前平台暂无公开榜单';
+      $('rankings-empty').querySelector('p').textContent = filter || data.category ? '尝试修改搜索关键词或分类。' : '平台没有返回可订阅的榜单。';
+    } else if (!data.loading && !data.error && data.catalog[data.platform] && visible.length === 0) {
+      $('rankings-empty').querySelector('h3').textContent = '没有匹配的榜单';
+      $('rankings-empty').querySelector('p').textContent = '尝试修改搜索关键词或分类。';
+    }
+    text('rankings-summary', data.catalog[data.platform] ? `共 ${number(items.length)} 个榜单${visible.length !== items.length ? `，筛选后 ${number(visible.length)} 个` : ''}` : '等待读取榜单');
+    const fetchedAt = data.catalog[data.platform] && data.catalog[data.platform].fetchedAt;
+    text('rankings-fetched-at', fetchedAt ? `更新于 ${date(fetchedAt, true)}` : '—');
+    document.querySelectorAll('#rankings-platform [data-platform]').forEach((button) => {
+      const active = button.dataset.platform === data.platform;
+      button.setAttribute('aria-selected', String(active));
+    });
+    const rows = visible.map((item) => {
+      const row = element('tr');
+      const name = cell('榜单');
+      const layout = element('div', 'ranking-identity');
+      const artwork = element('span', 'playlist-icon'); artwork.dataset.platform = data.platform; artwork.append(icon('list'));
+      const copy = element('div', 'task-name'); copy.append(element('div', 'cell-title', item.name || item.id), element('span', 'cell-subtitle mono', item.id));
+      layout.append(artwork, copy); name.append(layout);
+      const category = cell('分类'); category.textContent = item.category || '—';
+      const count = cell('歌曲数'); count.textContent = Number.isFinite(item.track_count) ? number(item.track_count) : '—';
+      const frequency = cell('更新频率'); frequency.textContent = item.update_frequency || '—';
+      const action = cell('操作');
+      const actions = element('div', 'ranking-row-actions');
+      const details = actionButton('详情', 'eye', 'button button-small button-secondary', (event) => openRankingDetails(item, event.currentTarget));
+      const subscribe = actionButton('订阅', 'plus', 'button button-small button-primary', (event) => subscribeRanking(item, event.currentTarget));
+      actions.append(details, subscribe); action.append(actions); row.append(name, category, count, frequency, action);
+      return row;
+    });
+    $('rankings-body').replaceChildren(...rows);
+  }
+
+  async function loadRankings(platform = state.rankings.platform, force = false) {
+    state.rankings.platform = platform;
+    state.rankings.error = '';
+    const cached = state.rankings.catalog[platform];
+    if (cached && !force) {
+      if (state.rankings.controller) state.rankings.controller.abort();
+      state.rankings.controller = null;
+      state.rankings.loading = false;
+      renderRankings();
+      return;
+    }
+    if (state.rankings.controller) state.rankings.controller.abort();
+    const controller = new AbortController();
+    state.rankings.controller = controller;
+    state.rankings.loading = true;
+    state.rankings.error = '';
+    renderRankings();
+    try {
+      const query = new URLSearchParams({ platform });
+      if (force) query.set('refresh', '1');
+      const response = await request(`/api/rankings?${query.toString()}`, { signal: controller.signal, timeout: 120000 });
+      if (!response || !Array.isArray(response.rankings)) throw new Error('排行榜服务返回了无法识别的目录。');
+      state.rankings.catalog[platform] = { items: response.rankings, fetchedAt: response.fetched_at };
+    } catch (error) {
+      if (error.name !== 'AbortError') state.rankings.error = error.message;
+    } finally {
+      if (state.rankings.controller === controller) {
+        state.rankings.controller = null;
+        state.rankings.loading = false;
+        renderRankings();
+      }
+    }
+  }
+
+  function subscribeRanking(item, trigger) {
+    openTask(null, trigger, { platform: state.rankings.platform, sourceType: 'ranking', sourceId: String(item.id) });
+  }
+
+  async function openRankingDetails(item, trigger) {
+    if (state.previewController) state.previewController.abort();
+    const controller = new AbortController();
+    state.previewController = controller;
+    state.rankingDetail = item;
+    text('preview-title', item.name || '排行榜详情');
+    text('preview-summary', `${platforms[state.rankings.platform]} · ${item.category || '未分类'} · ${item.update_frequency || '更新频率未知'}`);
+    text('preview-source', '平台直连');
+    $('preview-source').className = 'status-badge status-success';
+    text('preview-limit-note', '按平台排名顺序展示榜单曲目。');
+    show('preview-subscribe', true);
+    show('preview-loading', true);
+    show('preview-content', false);
+    show('preview-error', false);
+    $('preview-body').replaceChildren();
+    openDialog('preview-dialog', trigger);
+    try {
+      const path = `/api/rankings/${encodeURIComponent(state.rankings.platform)}/${encodeURIComponent(item.id)}`;
+      const detail = await request(path, { signal: controller.signal, timeout: 120000 });
+      if (controller.signal.aborted || state.rankingDetail !== item) return;
+      if (!detail || !Array.isArray(detail.tracks)) throw new Error('排行榜服务返回了无法识别的曲目列表。');
+      const reported = Number.isFinite(detail.reported_count) ? detail.reported_count : detail.tracks.length;
+      text('preview-title', detail.name || item.name || '排行榜详情');
+      text('preview-summary', `${platforms[state.rankings.platform]} · ${item.category || '未分类'} · ${item.update_frequency || '更新频率未知'} · 共 ${number(reported)} 首`);
+      const rows = detail.tracks.map((track) => {
+        const row = element('tr');
+        const song = cell('歌曲');
+        song.append(element('div', 'cell-title', track.name || '未命名歌曲'), element('code', 'cell-subtitle mono', track.id));
+        const artist = cell('歌手'); artist.textContent = artistNames(track);
+        const album = cell('专辑'); album.textContent = track.album || '—';
+        row.append(song, artist, album);
+        return row;
+      });
+      $('preview-body').replaceChildren(...rows);
+      show('preview-table', rows.length > 0);
+      show('preview-empty', rows.length === 0);
+      show('preview-content', true);
+    } catch (error) {
+      if (error.name !== 'AbortError') { text('preview-error', error.message); show('preview-error', true); }
+    } finally {
+      if (state.previewController === controller) { state.previewController = null; show('preview-loading', false); }
+    }
+  }
+
   async function copyID(id) {
     try {
       if (!navigator.clipboard) throw new Error('clipboard unavailable');
@@ -855,6 +1032,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const changed = state.route && next !== state.route;
     state.route = next;
     if (changed) { $(`${next}-title`).focus({ preventScroll: true }); window.scrollTo({ top: 0, behavior: 'instant' }); }
+    if (next === 'rankings') loadRankings(state.rankings.platform);
   }
 
   $('refresh-button').addEventListener('click', async (event) => {
@@ -863,7 +1041,8 @@ document.addEventListener('DOMContentLoaded', () => {
   $('add-task-button').addEventListener('click', (event) => openTask(null, event.currentTarget));
   $('empty-add-task-button').addEventListener('click', (event) => openTask(null, event.currentTarget));
   $('task-filter').addEventListener('input', () => renderTasks());
-  $('task-platform').addEventListener('change', () => renderTaskQuality($('task-platform').value));
+  $('task-platform').addEventListener('change', () => { renderTaskQuality($('task-platform').value); renderTaskSource(); });
+  $('task-source-type').addEventListener('change', renderTaskSource);
   $('task-form').addEventListener('submit', saveTask);
   $('delete-confirm').addEventListener('click', deleteTask);
   $('history-task-filter').addEventListener('change', () => renderHistory(true));
@@ -873,6 +1052,24 @@ document.addEventListener('DOMContentLoaded', () => {
   $('search-form').addEventListener('submit', (event) => { event.preventDefault(); searchSongs(0, true); });
   $('search-prev').addEventListener('click', () => searchSongs(Math.max(0, state.search.offset - state.search.limit)));
   $('search-next').addEventListener('click', () => searchSongs(state.search.offset + state.search.limit));
+  $('rankings-filter').addEventListener('input', (event) => { state.rankings.filter = event.target.value; renderRankings(); });
+  $('rankings-category').addEventListener('change', (event) => { state.rankings.category = event.target.value; renderRankings(); });
+  document.querySelectorAll('#rankings-platform [data-platform]').forEach((button) => button.addEventListener('click', () => loadRankings(button.dataset.platform)));
+  $('rankings-refresh').addEventListener('click', async (event) => {
+    await busyButton(event.currentTarget, '', () => loadRankings(state.rankings.platform, true));
+  });
+  $('rankings-retry').addEventListener('click', () => loadRankings(state.rankings.platform, true));
+  $('preview-subscribe').addEventListener('click', (event) => {
+    const item = state.rankingDetail;
+    if (!item) return;
+    const trigger = event.currentTarget;
+    const platform = state.rankings.platform;
+    state.rankingDetail = null;
+    state.dialogTriggers.delete('preview-dialog');
+    if ($('preview-dialog').open) $('preview-dialog').close();
+    if (state.previewController) { state.previewController.abort(); state.previewController = null; }
+    openTask(null, trigger, { platform, sourceType: 'ranking', sourceId: String(item.id) });
+  });
   $('run-all-button').addEventListener('click', async (event) => {
     state.busy.add('run-all');
     try {
@@ -888,7 +1085,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('dialog:not(#navigation-drawer)').forEach((dialog) => {
     dialog.addEventListener('cancel', (event) => { if (dialog.getAttribute('aria-busy') === 'true') event.preventDefault(); });
     dialog.addEventListener('close', () => {
-      if (dialog.id === 'preview-dialog' && state.previewController) { state.previewController.abort(); state.previewController = null; }
+      if (dialog.id === 'preview-dialog') {
+        if (state.previewController) { state.previewController.abort(); state.previewController = null; }
+        state.rankingDetail = null;
+        show('preview-subscribe', false);
+      }
       const trigger = state.dialogTriggers.get(dialog.id);
       if (trigger && trigger.isConnected) trigger.focus({ preventScroll: true });
     });
@@ -903,6 +1104,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (state.overviewController) state.overviewController.abort();
     if (state.previewController) state.previewController.abort();
     if (state.search.controller) state.search.controller.abort();
+    if (state.rankings.controller) state.rankings.controller.abort();
   });
   setupNavigation();
   route();

@@ -69,6 +69,22 @@ func TestHTTPJSONPreservesLargeIDsAndRejectsBadDocuments(t *testing.T) {
 	}
 }
 
+func TestHTTPJSONAllowsOnlyExplicitDuplicateKeys(t *testing.T) {
+	client, address := testMetadataHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"updateFrequency":null,"updateFrequency":"每天","id":1}`)
+	})
+	result, err := client.JSONAllowDuplicateKeys(context.Background(), http.MethodGet, address, nil, nil, "updateFrequency")
+	if err != nil || Text(result, "updateFrequency") != "每天" {
+		t.Fatalf("explicit duplicate allowance failed: %+v %v", result, err)
+	}
+	client, address = testMetadataHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"id":1,"id":2}`)
+	})
+	if _, err := client.JSONAllowDuplicateKeys(context.Background(), http.MethodGet, address, nil, nil, "updateFrequency"); err == nil {
+		t.Fatal("accepted a duplicate field outside the allowance")
+	}
+}
+
 func TestHTTPResponseLimitAndBoundedText(t *testing.T) {
 	for _, method := range []string{"json", "bytes", "text"} {
 		t.Run(method, func(t *testing.T) {
