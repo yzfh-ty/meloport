@@ -1,6 +1,37 @@
 (() => {
   'use strict';
 
+  const preferenceKey = 'meloport.theme';
+  const root = document.documentElement;
+  let theme = 'system';
+  try {
+    const saved = localStorage.getItem(preferenceKey);
+    if (saved === 'light' || saved === 'dark') theme = saved;
+  } catch { /* Fall back to the system appearance. */ }
+
+  function applyTheme() {
+    if (theme === 'light' || theme === 'dark') root.dataset.theme = theme;
+    else delete root.dataset.theme;
+  }
+
+  // Apply the saved override before the stylesheet renders.
+  applyTheme();
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('#theme-options input[name="theme"]').forEach((option) => {
+      option.checked = option.value === theme;
+      option.addEventListener('change', () => {
+        if (!option.checked) return;
+        theme = option.value;
+        applyTheme();
+        try { localStorage.setItem(preferenceKey, theme); } catch { /* Keep the preference for this page. */ }
+      });
+    });
+  }, { once: true });
+})();
+
+document.addEventListener('DOMContentLoaded', () => {
+  'use strict';
+
   const $ = (id) => document.getElementById(id);
   const platforms = { netease: '网易云音乐', qq: 'QQ 音乐', kugou: '酷狗音乐' };
   const titles = { overview: '任务概览', search: '歌曲检索', history: '运行记录', settings: '系统设置' };
@@ -203,7 +234,7 @@
     const queue = data.queue || {};
     const running = Array.isArray(queue.running) ? queue.running.length : 0;
     const pending = Array.isArray(queue.pending) ? queue.pending.length : 0;
-    text('queue-summary', running || pending ? `正在同步 ${running} 项 · 排队 ${pending} 项` : '任务串行执行，当前队列空闲');
+    text('queue-summary', running || pending ? `正在同步 ${running} 项 · 排队 ${pending} 项` : '同步队列空闲');
     show('key-notice', !data.api_key_configured);
     text('key-notice-text', `平台检索和歌单预览仍可使用。下载解析前，请在服务运行环境中配置 ${data.api_key_env || 'CHKSZ_API_KEY'}。`);
     show('queue-notice', Boolean(queue.paused));
@@ -263,10 +294,16 @@
       const rows = visible.map((task) => {
         const row = element('tr');
         const identity = cell('任务 / 歌单');
-        identity.append(element('div', 'cell-title', task.id));
+        const identityLayout = element('div', 'task-identity');
+        const artwork = element('span', 'playlist-icon');
+        artwork.dataset.platform = task.platform;
+        artwork.append(icon('music'));
+        const name = element('div', 'task-name');
         const playlist = element('span', 'cell-subtitle playlist-value', task.playlist);
         playlist.title = task.playlist;
-        identity.append(playlist);
+        name.append(element('div', 'cell-title', task.id), playlist);
+        identityLayout.append(artwork, name);
+        identity.append(identityLayout);
         const platform = cell('音乐平台');
         platform.append(platformBadge(task.platform));
         const toggleLabel = element('label', 'task-switch');
@@ -290,11 +327,13 @@
         next.append(element('span', 'cell-subtitle', quality ? `音质 ${quality}` : '继承全局音质'));
         const management = cell('管理任务');
         const actions = element('div', 'task-actions');
-        const run = actionButton(task.running ? '同步中' : task.queued ? '已排队' : '同步', 'play', '', (event) => runTask(task, event.currentTarget));
+        const run = actionButton(task.running ? '同步中' : task.queued ? '已排队' : '同步', 'play', 'button button-small button-secondary task-run', (event) => runTask(task, event.currentTarget));
         run.dataset.focusKey = `${task.id}:run`;
         run.disabled = !task.enabled || task.running || task.queued || Boolean(state.overview.queue && state.overview.queue.paused) || state.busy.has(`task:${task.id}:run`);
         run.title = !task.enabled ? '请先启用任务' : !state.overview.api_key_configured ? '未配置解析密钥时，缺失歌曲无法下载' : '';
-        const preview = actionButton('预览', 'eye', '', (event) => previewTask(task, event.currentTarget));
+        const preview = actionButton('', 'eye', 'icon-button', (event) => previewTask(task, event.currentTarget));
+        preview.setAttribute('aria-label', `预览歌单 ${task.id}`);
+        preview.title = '预览歌单';
         preview.dataset.focusKey = `${task.id}:preview`;
         const edit = actionButton('', 'edit', 'icon-button', (event) => openTask(task, event.currentTarget));
         edit.setAttribute('aria-label', `编辑任务 ${task.id}`);
@@ -703,6 +742,105 @@
     } catch { toast('无法自动复制，请手动选择歌曲标识并复制。', true); }
   }
 
+  function setupNavigation() {
+    const shell = document.querySelector('.app-shell');
+    const sidebar = $('sidebar');
+    const slot = sidebar.parentElement;
+    const drawer = $('navigation-drawer');
+    const toggle = $('sidebar-toggle');
+    const toggleIcon = $('sidebar-toggle-icon');
+    const mobileButtons = [...document.querySelectorAll('.mobile-menu-button')];
+    const mobile = window.matchMedia('(max-width: 760px)');
+    const compact = window.matchMedia('(max-width: 1120px)');
+    const preferenceKey = 'meloport.sidebar.collapsed';
+    let preferredCollapsed;
+    try {
+      const saved = localStorage.getItem(preferenceKey);
+      if (saved === 'true' || saved === 'false') preferredCollapsed = saved === 'true';
+    } catch { /* A blocked storage policy should not disable the navigation. */ }
+
+    const desktopCollapsed = () => preferredCollapsed ?? compact.matches;
+
+    function updateToggle() {
+      const expanded = mobile.matches ? drawer.open : !desktopCollapsed();
+      const label = mobile.matches ? (expanded ? '关闭导航' : '打开导航') : (expanded ? '折叠侧栏' : '展开侧栏');
+      toggle.setAttribute('aria-expanded', String(expanded));
+      toggle.setAttribute('aria-controls', mobile.matches ? drawer.id : sidebar.id);
+      if (mobile.matches) toggle.setAttribute('aria-haspopup', 'dialog');
+      else toggle.removeAttribute('aria-haspopup');
+      toggle.setAttribute('aria-label', label);
+      toggle.title = label;
+      toggleIcon.setAttribute('href', mobile.matches ? '#icon-menu' : '#icon-panel-left');
+      const mobileLabel = drawer.open ? '关闭导航' : '打开导航';
+      mobileButtons.forEach((button) => {
+        button.setAttribute('aria-expanded', String(drawer.open));
+        button.setAttribute('aria-controls', drawer.id);
+        button.setAttribute('aria-haspopup', 'dialog');
+        button.setAttribute('aria-label', mobileLabel);
+        button.title = mobileLabel;
+        const use = button.querySelector('use');
+        if (use) use.setAttribute('href', '#icon-menu');
+      });
+    }
+
+    function updateLayout() {
+      const destination = mobile.matches ? drawer : slot;
+      const moves = sidebar.parentElement !== destination;
+      const hadSidebarFocus = moves && sidebar.contains(document.activeElement);
+      if (!mobile.matches && drawer.open) {
+        state.dialogTriggers.delete(drawer.id);
+        drawer.close();
+      }
+      if (moves) destination.append(sidebar);
+      shell.classList.toggle('sidebar-collapsed', !mobile.matches && desktopCollapsed());
+      updateToggle();
+      if (hadSidebarFocus) toggle.focus({ preventScroll: true });
+    }
+
+    function openDrawer(trigger) {
+      state.dialogTriggers.set(drawer.id, trigger || document.activeElement);
+      if (!drawer.open) drawer.showModal();
+      updateToggle();
+    }
+
+    function closeDrawer() {
+      if (drawer.open) drawer.close();
+      else updateToggle();
+    }
+
+    toggle.addEventListener('click', () => {
+      if (mobile.matches) {
+        if (drawer.open) closeDrawer();
+        else openDrawer(toggle);
+        return;
+      }
+      preferredCollapsed = !desktopCollapsed();
+      try { localStorage.setItem(preferenceKey, String(preferredCollapsed)); } catch { /* Keep the preference for this page. */ }
+      updateLayout();
+    });
+    mobileButtons.forEach((button) => button.addEventListener('click', () => {
+      if (!mobile.matches) return;
+      if (drawer.open) closeDrawer();
+      else openDrawer(button);
+    }));
+    $('drawer-close').addEventListener('click', closeDrawer);
+    drawer.addEventListener('close', () => {
+      updateToggle();
+      const trigger = state.dialogTriggers.get(drawer.id);
+      state.dialogTriggers.delete(drawer.id);
+      if (trigger && trigger.isConnected) trigger.focus({ preventScroll: true });
+    });
+    drawer.addEventListener('click', (event) => {
+      if (event.target === drawer) {
+        const bounds = drawer.getBoundingClientRect();
+        if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) drawer.close();
+      } else if (event.target.closest('a[data-nav], a.brand')) closeDrawer();
+    });
+    mobile.addEventListener('change', updateLayout);
+    compact.addEventListener('change', updateLayout);
+    updateLayout();
+  }
+
   function route() {
     const requested = window.location.hash.slice(1) || 'overview';
     const next = Object.hasOwn(titles, requested) ? requested : 'overview';
@@ -712,7 +850,7 @@
       if (link.dataset.nav === next) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
     });
-    text('breadcrumb-current', titles[next]);
+    if ($('breadcrumb-current')) text('breadcrumb-current', titles[next]);
     document.title = `${titles[next]} · Meloport`;
     const changed = state.route && next !== state.route;
     state.route = next;
@@ -747,7 +885,7 @@
     finally { state.busy.delete('run-all'); renderOverview(); }
   });
   document.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', () => closeDialog(button.dataset.close)));
-  document.querySelectorAll('dialog').forEach((dialog) => {
+  document.querySelectorAll('dialog:not(#navigation-drawer)').forEach((dialog) => {
     dialog.addEventListener('cancel', (event) => { if (dialog.getAttribute('aria-busy') === 'true') event.preventDefault(); });
     dialog.addEventListener('close', () => {
       if (dialog.id === 'preview-dialog' && state.previewController) { state.previewController.abort(); state.previewController = null; }
@@ -766,6 +904,7 @@
     if (state.previewController) state.previewController.abort();
     if (state.search.controller) state.search.controller.abort();
   });
+  setupNavigation();
   route();
   refreshOverview();
-})();
+}, { once: true });
