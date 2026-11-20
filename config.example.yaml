@@ -1,0 +1,61 @@
+# All relative paths are resolved from THIS file's directory.
+timezone: Asia/Shanghai
+schedule: "0 3 * * *" # Default: daily at 03:00, standard five-field cron.
+quality: lossless
+run_on_start: false # No immediate API requests when starting the scheduler.
+
+api:
+  base_url: https://api.chksz.com
+  key_env: CHKSZ_API_KEY # Set the real key in your process environment, never here.
+  timeout: 30s
+  min_interval: 3100ms # Do not reduce below the documented 20 requests/minute.
+
+# Playlist/search/track metadata connect directly to the selected music platform.
+metadata:
+  timeout: 30s
+  min_interval: 1s
+  fallback_to_api: true # Only after native failure, and only for documented endpoints.
+  netease_cookie_env: MELOPORT_NETEASE_COOKIE
+  qq_cookie_env: MELOPORT_QQ_COOKIE
+  kugou_cookie_env: MELOPORT_KUGOU_COOKIE
+
+storage:
+  database: data/meloport.db
+  music_dir: data/music
+
+download:
+  timeout: 5m
+  max_size_mb: 512
+
+server:
+  listen: "127.0.0.1:8080" # Local Web management and health checks. Set "" to disable.
+
+tasks:
+  - id: favorites
+    platform: netease
+    # Example ID; replace with your actual public/full-access playlist ID or URL.
+    playlist: "3778678"
+    # Omit schedule to inherit the global default.
+    # schedule: "30 2 * * *"
+    # Omit quality to inherit the global default.
+    # quality: hires
+    # directory is relative to storage.music_dir; defaults to the task ID.
+    # directory: favorites
+    enabled: true
+
+  # - id: evening
+  #   playlist: "https://music.163.com/#/playlist?id=YOUR_PLAYLIST_ID"
+  #   schedule: "0 20 * * *"
+
+  # QQ song IDs are string MIDs; the native playlist reader handles this.
+  # - id: qq-favorites
+  #   platform: qq
+  #   playlist: "https://y.qq.com/n/ryqq/playlist/YOUR_PLAYLIST_ID"
+  #   quality: flac
+  #   schedule: "30 3 * * *"
+
+  # Kugou numeric share codes, id_SPECIAL and supported official share links.
+  # - id: kugou-favorites
+  #   platform: kugou
+  #   playlist: "id_YOUR_SPECIAL_ID"
+  #   quality: flac

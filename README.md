@@ -1,0 +1,151 @@
+# Meloport
+
+歌单订阅下载服务：定时读取歌单，只下载本地缺少的歌曲，保留原始音频格式。使用 Go 与 SQLite，在本机运行，不需要单独安装数据库服务。
+
+**歌单、搜索和歌曲元数据优先直连音乐平台；ChKSz 主要用于缺失歌曲的音频解析。** 当前正式接入网易云、QQ 音乐、酷狗，范围与 ChKSz 支持的平台一致。其他平台只保留 `Source` 扩展接口，没有注册虚构实现。开发阶段暂不打包 Docker。
+
+## 本机启动与网页管理
+
+需要 Go 1.26 或更高版本。开发脚本将缓存放在项目 `.cache`，普通构建使用 `CGO_ENABLED=0`，执行结束恢复原环境变量。
+
+```powershell
+.\scripts\dev.ps1 -Action build
+.\bin\meloport.exe serve -config config.yaml
+```
+
+打开 **http://127.0.0.1:8080/**。首次 `serve` 如果找不到配置文件，会创建仅含空任务列表的本地配置；**无需 Key 即可启动控制台**。已有配置不会被覆盖。
+
+网页提供任务新建／编辑／删除、启用开关、单任务或全部立即同步、歌单预览、平台歌曲检索、最近运行记录，以及全局时区／默认时间／音质／元数据回退设置。任务 ID 创建后保持不变；删除任务不删除音频、下载记录或历史。
+
+网页保存会校验并写回当前 YAML，随后重新应用调度，无需重启。正在运行的任务需完成后再编辑或删除；已经排队的任务执行前会读取最新启用状态。网页没有 Key 或 Cookie 输入框，密钥只从进程环境读取。
+
+也可以先复制 [配置示例](config.example.yaml)，在文件中设置任务，再运行 `validate`。手动修改 YAML 后需要重启服务；当前没有文件监视热加载。请避免同时使用外部编辑器和网页修改配置，重启前页面中的文件值可能与内存中实际运行的配置不同。
+
+```powershell
+Copy-Item config.example.yaml config.yaml # 仅在尚无 config.yaml 时执行。
+.\bin\meloport.exe validate -config config.yaml
+```
+
+HTTP 只允许绑定回环地址，默认 `127.0.0.1:8080`。`server.listen: ""` 可关闭网页和健康检查。当前是本机控制台，没有远程登录、多用户或公网管理功能。`Ctrl+C` 正常停止服务。
+
+## 获取与回退规则
+
+| 功能 | 首选来源 | 直连失败后 |
+| --- | --- | --- |
+| 网易云歌单 | 网易云平台接口，完整成员 ID 与歌曲详情校验 | 回退开关开启时可调用 ChKSz 网易云歌单接口 |
+| QQ／酷狗歌单 | 对应平台接口；酷狗部分专题使用平台网页内嵌列表 | 明确失败；ChKSz 文档没有这两个平台的歌单接口 |
+| 三平台歌曲搜索 | 对应平台搜索接口 | 回退开关开启时可调用 ChKSz 对应搜索接口 |
+| 缺失歌曲音频 | ChKSz 解析 | 记录实际错误，不自动改为其他平台或较低音质 |
+
+成功的直连请求不会再调用 ChKSz；有效空搜索结果也不会触发回退。取消操作不会触发额外回退。回退会在日志中标明平台、操作和原因；歌单预览／同步摘要也区分 `native` 与 `chksz_fallback`。
+
+```yaml
+metadata:
+  timeout: 30s
+  min_interval: 1s
+  fallback_to_api: true # 设为 false 可关闭可选的元数据回退。
+```
+
+关闭元数据回退不影响下载时必需的音频解析，也不关闭酷狗解析前的 ID 确认。仅本地有效文件已全部存在、且歌单直连成功时，整轮同步不需要 Key，也不会消耗 ChKSz 请求。
+
+## Key 与可选平台 Cookie
+
+从 https://api.chksz.com/login 获取个人 `chksz_` Key。启动、直连搜索和歌单预览不提前校验 Key；真正需要解析音频或回退时才读取。需下载时，在启动服务的终端设置后重新启动：
+
+```powershell
+$secureKey = Read-Host 'ChKSz API Key' -AsSecureString
+$env:CHKSZ_API_KEY = [System.Net.NetworkCredential]::new('', $secureKey).Password
+Remove-Variable secureKey
+.\bin\meloport.exe serve -config config.yaml
+```
+
+默认 Cookie 环境变量为 `MELOPORT_NETEASE_COOKIE`、`MELOPORT_QQ_COOKIE`、`MELOPORT_KUGOU_COOKIE`，可通过 `metadata.*_cookie_env` 更换名称。公开歌单先尝试匿名请求；登录限制取决于平台。Cookie 仅发给对应平台，不传给 ChKSz 或音频站点；ChKSz Key 同样不会传给平台接口。不要将实际密钥写入 YAML、仓库或订阅链接。
+
+进程环境不会因另一个终端设置变量而改变。更换 Key、Cookie 或它们的环境变量名后，请重新启动服务。
+
+## 任务与时间
+
+所有相对路径以**配置文件目录**为基准，任务 `directory` 相对于 `storage.music_dir`。任务省略 `schedule`、`quality` 时继承全局默认；省略 `directory` 时使用任务 ID。完整选项见 [config.example.yaml](config.example.yaml)。
+
+```yaml
+timezone: Asia/Shanghai
+schedule: "0 3 * * *"
+quality: lossless
+run_on_start: false
+tasks:
+  - id: favorites
+    platform: netease
+    playlist: "3778678" # 示例；请换成自己的歌单。
+  - id: qq-evening
+    platform: qq
+    playlist: "https://y.qq.com/n/ryqq/playlist/123456789"
+    schedule: "0 20 * * *"
+    enabled: false
+  - id: kg-weekend
+    platform: kugou
+    playlist: "id_123456" # 专题歌单 ID；纯数字按分享码解释。
+    schedule: "30 4 * * 6"
+    enabled: false
+```
+
+cron 为五字段“分钟 小时 日 月 星期”，不含秒，不接受 `@daily`。默认中国时区每天 03:00；每个任务可独立覆盖。单 worker 串行执行，同一任务运行或排队时合并重复触发。停服期间错过的定时不会自动补跑；可手动运行或设置 `run_on_start: true`。
+
+链接／ID 支持范围：网易云普通完整歌单链接及 ID；QQ 官方完整歌单链接及 ID；酷狗数字分享码、`id_专题ID`、编码 gcid 和带 chain／global_collection_id 的受支持官方链接。不透明短链接需要先展开；未知链接会明确报错。
+
+音质使用各平台原生值，任务中显式填写的值不做别名猜测或自动降级：
+
+| 平台 | 任务可用值 |
+| --- | --- |
+| 网易云 | `standard`、`exhigh`、`lossless`、`hires`、`jyeffect`、`sky`、`jymaster` |
+| QQ／酷狗 | `128k`、`320k`、`flac`、`hires`、`master` |
+
+全局通用偏好在继承时做语义映射，例如 `lossless` → 网易云 `lossless`、QQ／酷狗 `flac`；`standard`／`exhigh`／`jymaster` 分别对应另外两平台的 `128k`／`320k`／`master`。更改音质不会替换已经完整下载的文件，实际可用音质仍由上游决定。
+
+## 命令行
+
+以下预览和检索默认直连平台；回退开启且直连失败时可能消耗 ChKSz 额度。
+
+```powershell
+.\bin\meloport.exe playlist -config config.yaml -task favorites
+.\bin\meloport.exe search -config config.yaml -platform qq -keyword '歌名或歌手' -limit 20 -offset 0
+.\bin\meloport.exe sync -config config.yaml -task favorites
+.\bin\meloport.exe status -config config.yaml -limit 20
+```
+
+不要同时在同一数据库上运行 `serve` 和 `sync`，写进程锁会拒绝第二个实例。服务运行时请在网页触发任务；只读 `status` 可并行使用。`/healthz` 和 `/readyz` 仍可用于本地健康检查。
+
+## 数据、去重与恢复
+
+默认 SQLite 为 `data/meloport.db`，音频目录为 `data/music/任务ID/`。文件按 `平台-稳定歌曲ID.实际格式` 命名：网易云用歌曲 ID、QQ 用 MID、酷狗优先使用原生音频 hash。标题／歌手／专辑存入数据库，不因同名歌曲相互覆盖。
+
+已有记录还会检查实际文件是否为常规文件、大小是否一致。缺失文件会补下载；大小异常文件仅在解析成功后保留为 `.corrupt-*` 再修复。远端删歌、删任务或改目录均不会自动删除旧音频。
+
+下载采用同目录临时文件、文件头识别、长度校验和 SHA-256 登记，使用硬链接原子发布，因此目标文件系统须支持硬链接；不支持时明确失败。不会每轮重新哈希或解码已有音频，同大小的外部修改不在当前检测范围。强制断电可能留下 `.part`，停服后可自行确认清理。
+
+崩溃后已有成品但尚无数据库记录时可以恢复登记，当前仍先解析，可能消耗额度并计入 `downloaded`。网页登记数量／大小来自数据库，不能代替实时磁盘审计。不同任务分别存储同一歌曲，当前不做跨任务音频共享、音频标签、歌词或封面侧车文件。
+
+## 酷狗标识与额度
+
+原生酷狗 hash／audio_id 不直接假定为 ChKSz 的 `id`。仅在发现缺失文件、进入音频解析阶段时，通过 ChKSz 酷狗搜索取得其自身 ID，并进行确认：优先匹配相同 hash；否则必须唯一匹配规范化标题、歌手、专辑及相差不超过 2 秒的时长。明确不同 hash、信息不足或多个匹配版本都会报错，不自动选择同名翻唱／现场版。
+
+因此通常每首缺失的网易云／QQ 歌曲需要一次 ChKSz 解析；酷狗还需要一次 ID 确认搜索。原生歌单／搜索请求不消耗 ChKSz 额度，只有实际回退时才计入。依据 [接口文档](docs/ChKSz%20API.md)，默认每分钟 20 次、每日免费 50 次；ChKSz 请求间隔至少 3.1 秒，平台元数据独立串行间隔默认 1 秒。多个程序共享 Key 时需自行协调额度。
+
+401／403 会停止当前批次并暂停调度至修复后重启；402 暂停到下一次 UTC+8 零点后等待后续定时；429 仅在有效 `Retry-After` 下最多重试一次，之后至少暂停一分钟；503 也停止当前批次并短暂暂停。普通单首失败保留记录并继续其他歌曲。不自动充值，不无限重试，不静默跨平台替换。
+
+## 验证与实现边界
+
+```powershell
+.\scripts\dev.ps1 -Action test
+```
+
+普通全量测试、`go vet`、构建与 `CGO_ENABLED=1 go test -race -count=1 ./...` 已通过，覆盖原生来源、ChKSz、配置编辑、同步和网页后端。测试使用本地模拟服务和临时 SQLite，自行关闭资源。普通开发脚本使用 `CGO_ENABLED=0`；竞态检查在可用的本机 C 编译环境执行，没有修改系统工具链。
+
+2026-11-20 在未配置 ChKSz Key、关闭元数据回退的情况下，三平台真实歌曲搜索均成功；网易云公开歌单 `3778678` 返回 200/200，QQ 公开歌单 `7217720898` 返回 35/35，酷狗 `id_1067062`「放松轻音：你的舒缓良方」读取到 20 首，另由官方移动页面的 `songcount=20`、`total=20` 佐证。均未调用 ChKSz 或下载音频。
+
+尚未使用真实 ChKSz Key 联调，也未进行真实歌曲下载验收。平台接口、访问限制和返回字段可能变化；专题 HTML 在未声明总数时也无法证明服务端没有隐藏截断。模拟测试只能验证当前协议及错误处理，不能保证每个真实歌单都可匿名读取。
+
+实际 Go 服务的浏览器验收通过 67 项检查，覆盖 1440px 桌面、375px 手机、812px 横屏和键盘对话框操作。9 次真实任务／设置写入、真实进程重启后的配置保留和删任务保留本地文件均已验证；搜索／预览的页面交互使用明确的本地模拟响应，与上述真实平台元数据实测分开。截图及检查结果在被忽略的 `.cache/webui-qa/`。测试服务、隔离浏览器和临时代理均已关闭，测试端口已验证释放。
+
+Windows 本机构建与 Linux amd64 交叉编译已通过。真实音频验收仍需个人 Key；当前没有 Docker 构建、真实 Linux 部署或代码推送。
+
+设计与来源见 [初始化设计](tmp/初始化设计.md)、[参考项目调研](tmp/参考项目调研.md)、[网页界面设计](tmp/Web界面设计.md)。参考克隆位于 `tmp/references/`；缓存、编译产物、配置、实际数据及参考克隆均已加入忽略规则。

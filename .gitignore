@@ -1,0 +1,15 @@
+/.cache/
+/tmp/references/
+/bin/
+/data/
+/config.yaml
+/.env
+/.env.*
+!/.env.example
+*.test
+*.exe
+*.out
+*.log
+.DS_Store
+.idea/
+.vscode/
