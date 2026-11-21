@@ -55,6 +55,7 @@ type Config struct {
 	Storage    Storage        `yaml:"storage"`
 	Download   Download       `yaml:"download"`
 	Server     Server         `yaml:"server"`
+	Cloud115   Cloud115       `yaml:"cloud115"`
 	Tasks      []Task         `yaml:"tasks"`
 	Location   *time.Location `yaml:"-"`
 }
@@ -125,6 +126,7 @@ func defaults() Config {
 		Storage:  Storage{Database: "data/meloport.db", MusicDir: "data/music"},
 		Download: Download{Timeout: Duration{5 * time.Minute}, MaxSizeMB: 512},
 		Server:   Server{Listen: "127.0.0.1:8080"},
+		Cloud115: cloud115Defaults(),
 	}
 }
 
@@ -285,7 +287,7 @@ func (c *Config) validate(baseDir string) error {
 		}
 		dirs[key] = true
 	}
-	return nil
+	return c.validateCloud115(baseDir)
 }
 
 func ParsePlaylistFor(source, value string) (string, error) {

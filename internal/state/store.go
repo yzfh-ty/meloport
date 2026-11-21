@@ -18,7 +18,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 2
+const schemaVersion = 3
 
 type Store struct {
 	db *sql.DB
@@ -168,15 +168,21 @@ func (s *Store) migrate(ctx context.Context) error {
 			}
 		}
 	}
-	for _, statement := range []string{
-		`ALTER TABLE downloads ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'`,
-		`ALTER TABLE downloads ADD COLUMN tag_fingerprint TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE downloads ADD COLUMN tag_pending INTEGER NOT NULL DEFAULT 0`,
-		`CREATE INDEX IF NOT EXISTS downloads_path ON downloads(path)`,
-		`PRAGMA user_version = 2`,
-	} {
+	if version < 2 {
+		for _, statement := range []string{
+			`ALTER TABLE downloads ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'`,
+			`ALTER TABLE downloads ADD COLUMN tag_fingerprint TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE downloads ADD COLUMN tag_pending INTEGER NOT NULL DEFAULT 0`,
+			`CREATE INDEX IF NOT EXISTS downloads_path ON downloads(path)`,
+		} {
+			if _, err := tx.ExecContext(ctx, statement); err != nil {
+				return fmt.Errorf("migrate audio tag state: %w", err)
+			}
+		}
+	}
+	for _, statement := range cloudSchema {
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf("migrate audio tag state: %w", err)
+			return fmt.Errorf("migrate 115 file state: %w", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {

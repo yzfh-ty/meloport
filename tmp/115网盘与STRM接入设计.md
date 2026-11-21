@@ -1,6 +1,8 @@
 # Meloport 接入 115 OpenAPI 与 STRM
 
-2026-11-21 · 接入设计，待实现与账号联调。
+2026-11-21 · 首版已实现，本地模拟验证与真实账号联调分开记录。
+
+首版用环境变量注入 Access Token。Meloport 将校验完成的音频同卷移入 CD2 暂存目录，定时通过 115 OpenAPI 核对远程文件并生成 STRM。Meloport 提供独立媒体监听，可选接入 Subsonic 反代。配置与命令见 [README](../README.md#115-网盘cd2-与-strm)。自动续期、PKCE 扫码、真实播放器的首播与拖动仍待联调。首版每次请求获取新的临时直链，等 115 直链有效期得到验证后再评估缓存。
 
 ## 目标与首版范围
 
@@ -86,11 +88,13 @@ MusicWarp 只作为代码模式参考，不作为独立运行时服务。把需�
 | 2 | 对接 CD2 上传完成状态，增加远程文件映射和源文件保留/清理状态 | `internal/config/config.go`、`internal/app/`、`internal/state/` |
 | 3 | 增加远程完成记录；本地暂存文件被清理后，普通歌单同步必须从 115 远程状态恢复，不重复解析下载 | `internal/syncer/syncer.go`、`internal/state/` |
 | 4 | 增加 Navidrome 透明反代、播放请求拦截、独立 STRM 写入与稳定媒体 302 入口 | `internal/syncer/syncer.go`、`internal/download/`、`internal/app/`、`internal/state/` |
-| 4 | 验证凭据轮换、定时同步、Range/UA 和目标播放器，再决定是否集成 PKCE 扫码 UI | `tmp/references/115-sdk-go/auth.go` 与 `tmp/references/openlist-api-pages/src/driver/115cloud_oa.ts`（仅作授权参考） |
+| 5 | 验证凭据轮换、定时同步、Range/UA 和目标播放器，再决定是否集成 PKCE 扫码 UI | `tmp/references/115-sdk-go/auth.go` 与 `tmp/references/openlist-api-pages/src/driver/115cloud_oa.ts`（仅作授权参考） |
 
 本地参考仓库位于 Git 忽略的 `tmp/references/`。对应版本为 OpenList `7c26f10`、OpenList-APIPages `4322fd1`、115 Go SDK `v0.2.6`。这些目录只供查阅，独立检出时可按上面的上游链接获取对应源码。
 
 ## 接入验收
+
+本地测试覆盖分页读取、未完成文件过滤、标签未完成时保留工作文件、远程文件大小与哈希核对、清理源文件后续同步、重启后恢复同一 STRM 链接，以及 Subsonic 请求鉴权、302 和回源。
 
 - [ ] **授权与读取。** 使用官方页预设参数取得专用令牌，对一个含有自有测试音频的小目录验证用户信息、分页文件列表和 `downurl`。记录结果、状态码与文件数量，测试输出中省略令牌和临时地址。
 - [ ] **上传与导出。** 覆盖中文与空格、同名不同扩展、安全路径、CD2 上传中断和重试。确认远程文件可读后才生成 `.strm`；确认 CD2 完成后再删除源文件，重复运行不重复上传。

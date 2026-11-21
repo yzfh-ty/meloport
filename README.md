@@ -166,6 +166,24 @@ YAML 内部继续使用五字段 cron“分钟 小时 日 月 星期”，不含
 
 标签引擎使用内嵌 Wasm 的 go-taglib/TagLib；来源、许可证及替换构建方法见 [第三方说明](docs/THIRD_PARTY.md)。
 
+## 115 网盘、CD2 与 STRM
+
+在 `config.yaml` 中启用 `cloud115`，填写专用的 115 目标目录 `target_cid`。把 `staging_dir` 设为 CD2 单向上传的监控目录，并把该目录的**内容**上传到目标 `cid`，保留任务子目录（远端布局为 `<target_cid>/<任务ID>/<音频文件>`）。在 CD2 中配置确认上传成功后再清理源文件。`storage.music_dir` 和各任务的工作目录需要与 `staging_dir` 位于同一个文件系统，`strm_dir` 使用单独的目录。完整音频会原子移入暂存目录，然后交给 CD2。
+
+使用 [OpenList 官方授权页](https://api.oplist.org/115cloud/requests?driver_txt=115cloud_go&server_use=true) 的 115 网盘验证登录取得 Meloport 专用的短期 Access Token，把它放进启动进程的 `MELOPORT_115_ACCESS_TOKEN` 环境变量（可改 `access_token_env`）。令牌失效时重新授权并重启进程。`cloud-check` 验证令牌和目录访问。加 `-downurl` 可检查一个已完成文件的直链解析，终端只显示结果。
+
+```powershell
+.\bin\meloport.exe cloud-check -config config.yaml
+.\bin\meloport.exe cloud-check -config config.yaml -downurl
+.\bin\meloport.exe serve -config config.yaml
+```
+
+Meloport 按准确的文件名、大小和 SHA-1 核对 115 上的成品，再持久化映射和生成 `strm_dir/<任务ID>/<音频文件>.strm`。交给 CD2 后，即使暂存文件已清理，再跑原任务也会跳过该歌曲。若长时间未生成 STRM，先在 CD2 检查失败队列、保留的子目录和远端文件。如果暂存文件被提前移除，需从备份或 CD2 恢复文件，待 115 核对通过后才会导出。停止 `serve` 后可执行 `meloport.exe cloud-reconcile -config config.yaml`，立即核对待上传记录并修复缺失的 STRM。网页「音频文件」检查的是本地工作文件，仍可能把已交给 CD2 的记录显示为本地缺失。
+
+播放器读取 STRM 中的一行媒体地址，Meloport 使用该请求的 User-Agent 取得 115 的临时 HTTPS 直链并返回 302。媒体监听默认使用 `127.0.0.1:8081`。跨设备播放时，把 `media_base_url` 设为播放器可访问的 HTTPS 地址，并把它反代到 `media_listen`。若配置了 URL 路径前缀，反代需去掉该前缀。STRM 链接持有者可以播放对应音频，请保护导出目录并在反代日志中隐藏媒体路径。
+
+使用 Subsonic 客户端时，音乐库扫描目录应指向 CD2 挂载的 115 目标目录。设置 `navidrome_url` 和音乐服务端看到的绝对 `navidrome_mount_root`。在用于直连播放的播放器设置中开启 `Report Real Path`，关闭服务端转码和码率限制，再把客户端连接到 Meloport 媒体端口。普通播放会在上游鉴权及真实路径匹配后尝试 302。请求显式指定转码、码率限制或未找到文件映射时继续由上游处理。使用上游服务的原生鉴权，且不要将 Meloport 加到上游的外部鉴权代理信任列表。配置示例见 [config.example.yaml](config.example.yaml)。首轮账号联调清单见 [115 网盘与 STRM 接入设计](tmp/115网盘与STRM接入设计.md)。
+
 ## 数据、去重与恢复
 
 默认 SQLite 为 `data/meloport.db`，音频目录为 `data/music/任务ID/`。文件按 `平台-稳定歌曲ID.实际格式` 命名：网易云用歌曲 ID、QQ 用 MID、酷狗优先使用原生音频 hash。标题／歌手／专辑同时用于文件标签与数据库记录，不因同名歌曲相互覆盖。数据库首次写入会自动升级到支持标签状态的版本。

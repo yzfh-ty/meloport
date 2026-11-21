@@ -176,38 +176,65 @@ func serve(parent context.Context, cfg *config.Config, tasks []config.Task, engi
 	control := newWebController(cfg, allTasks, queue, logger, options)
 	queue.resolve = control.resolve
 	var ready atomic.Bool
-	var server *http.Server
-	var healthListener net.Listener
-	serverErrors := make(chan error, 1)
-	if cfg.Server.Listen != "" {
-		listener, err := net.Listen("tcp", cfg.Server.Listen)
+	type boundServer struct {
+		name     string
+		listener net.Listener
+		server   *http.Server
+	}
+	var servers []boundServer
+	serverErrors := make(chan error, 2)
+	bind := func(name, message, address string, handler http.Handler, writeTimeout time.Duration) error {
+		listener, err := net.Listen("tcp", address)
 		if err != nil {
-			return fmt.Errorf("listen for local web management: %w", err)
+			return fmt.Errorf("listen for %s: %w", name, err)
 		}
-		healthListener = listener
-		server = &http.Server{
-			Handler:           control.handler(healthHandler(ctx, store, &ready), &ready),
+		server := &http.Server{
+			Handler:           handler,
 			BaseContext:       func(net.Listener) context.Context { return ctx },
-			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 120 * time.Second, IdleTimeout: 30 * time.Second,
+			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: writeTimeout, IdleTimeout: 30 * time.Second,
 		}
-		go func() { serverErrors <- server.Serve(listener) }()
-		logger.Info("local web server listening", "address", listener.Addr().String())
+		servers = append(servers, boundServer{name, listener, server})
+		logger.Info(message, "address", listener.Addr().String())
+		return nil
+	}
+	defer func() {
+		for _, bound := range servers {
+			_ = bound.listener.Close()
+		}
+	}()
+	if cfg.Server.Listen != "" {
+		if err := bind("local web management", "local web server listening", cfg.Server.Listen, control.handler(healthHandler(ctx, store, &ready), &ready), 120*time.Second); err != nil {
+			return err
+		}
+	}
+	if options.Cloud != nil {
+		// The Subsonic fallback can stream entire audio files through this listener.
+		if err := bind("115 media playback", "115 media server listening", cfg.Cloud115.MediaListen, options.Cloud.handler, 0); err != nil {
+			return err
+		}
 	}
 	if err := control.install(cfg, allTasks, false); err != nil {
-		if healthListener != nil {
-			_ = healthListener.Close()
-		}
-		if server != nil {
-			_ = server.Close()
-			<-serverErrors
-		}
 		return fmt.Errorf("schedule tasks: %w", err)
+	}
+	for _, bound := range servers {
+		go func() {
+			if err := bound.server.Serve(bound.listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				serverErrors <- fmt.Errorf("%s: %w", bound.name, err)
+			}
+		}()
 	}
 	for _, task := range allTasks {
 		logger.Info("task registered", "task", task.ID, "schedule", task.Schedule, "timezone", cfg.Timezone)
 	}
 	workerDone := make(chan struct{})
 	go func() { defer close(workerDone); queue.work(ctx, engine, logger) }()
+	cloudDone := make(chan struct{})
+	go func() {
+		defer close(cloudDone)
+		if options.Cloud != nil {
+			options.Cloud.poll(ctx, cfg.Cloud115.PollInterval.Duration, logger)
+		}
+	}()
 	control.mu.Lock()
 	control.scheduler.Start()
 	control.mu.Unlock()
@@ -223,22 +250,20 @@ func serve(parent context.Context, cfg *config.Config, tasks []config.Task, engi
 	var result error
 	select {
 	case <-parent.Done():
-	case err := <-serverErrors:
-		if !errors.Is(err, http.ErrServerClosed) {
-			result = fmt.Errorf("local web server: %w", err)
-		}
+	case result = <-serverErrors:
 	}
 	ready.Store(false)
 	cancel()
 	control.stop()
-	if server != nil {
-		shutdownCtx, stop := cleanupContext()
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			_ = server.Close()
+	shutdownCtx, stop := cleanupContext()
+	for _, bound := range servers {
+		if err := bound.server.Shutdown(shutdownCtx); err != nil {
+			_ = bound.server.Close()
 		}
-		stop()
 	}
+	stop()
 	<-workerDone
+	<-cloudDone
 	logger.Info("service stopped")
 	return result
 }

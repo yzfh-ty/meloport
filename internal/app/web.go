@@ -35,6 +35,7 @@ type serviceOptions struct {
 	Store      *state.Store
 	Metadata   *provider.Manager
 	Audio      audioLibrary
+	Cloud      *cloudRuntime
 }
 
 type webController struct {

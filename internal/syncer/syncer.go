@@ -48,6 +48,12 @@ type AudioResolver interface {
 	Resolve(context.Context, string, model.Track, string) (model.ResolvedTrack, error)
 }
 
+// CloudStorage owns an audio file once it is handed off to CD2.
+type CloudStorage interface {
+	Ready(ctx context.Context, taskID, provider, trackID string) (bool, error)
+	Stage(context.Context, state.Download) (bool, error)
+}
+
 type legacyProvider struct{ Provider }
 
 func (p legacyProvider) Playlist(ctx context.Context, source, id string) (model.Playlist, error) {
@@ -76,6 +82,7 @@ type Engine struct {
 	resolver   AudioResolver
 	downloader Downloader
 	store      *state.Store
+	cloud      CloudStorage
 	permit     chan struct{}
 }
 
@@ -105,6 +112,9 @@ func New(provider Provider, downloader Downloader, store *state.Store) *Engine {
 func NewWithSources(reader PlaylistReader, resolver AudioResolver, downloader Downloader, store *state.Store) *Engine {
 	return &Engine{reader: reader, resolver: resolver, downloader: downloader, store: store, permit: make(chan struct{}, 1)}
 }
+
+// UseCloudStorage configures the handoff before the engine starts serving.
+func (e *Engine) UseCloudStorage(cloud CloudStorage) { e.cloud = cloud }
 
 // Run serializes all tasks sharing this engine. Waiting is canceled on shutdown.
 func (e *Engine) Run(ctx context.Context, task model.Task) (summary Summary, returnedErr error) {
@@ -217,6 +227,17 @@ func (e *Engine) Run(ctx context.Context, task model.Task) (summary Summary, ret
 			addIssue("playlist contains an invalid track ID")
 			continue
 		}
+		if e.cloud != nil {
+			handedOff, err := e.cloud.Ready(ctx, task.ID, providerName, track.ID)
+			if err != nil {
+				return summary, err
+			}
+			if handedOff {
+				summary.Skipped++
+				summary.Pending--
+				continue
+			}
+		}
 		stored, found, err := e.store.GetDownload(ctx, task.ID, providerName, track.ID)
 		if err != nil {
 			return summary, err
@@ -234,6 +255,24 @@ func (e *Engine) Run(ctx context.Context, task model.Task) (summary Summary, ret
 				continue
 			}
 			addTagWarning(&summary.TagWarnings, track.ID, warning)
+			if e.cloud != nil {
+				updated, present, err := e.store.GetDownload(ctx, task.ID, providerName, track.ID)
+				if err != nil {
+					return summary, err
+				}
+				if !present {
+					return summary, errors.New("tagged download record is missing")
+				}
+				if err := e.stage(ctx, updated); err != nil {
+					if ctx.Err() != nil {
+						return summary, ctx.Err()
+					}
+					summary.Failed++
+					summary.Pending--
+					addIssue(fmt.Sprintf("track %s: %v", track.ID, err))
+					continue
+				}
+			}
 			summary.Skipped++
 			summary.Pending--
 			continue
@@ -255,18 +294,20 @@ func (e *Engine) Run(ctx context.Context, task model.Task) (summary Summary, ret
 					fingerprint = tagFingerprint(track)
 				}
 				addTagWarning(&summary.TagWarnings, track.ID, result.TagWarning)
-				err = e.store.SaveDownload(ctx, state.Download{
+				item := state.Download{
 					TaskID: task.ID, Provider: providerName, TrackID: track.ID,
 					Path: result.Path, Size: result.Size, SHA256: result.SHA256,
 					Title: track.Name, Artists: track.Artists, Album: track.Album,
 					Metadata: track, TagFingerprint: fingerprint,
-				})
-				if err != nil {
+				}
+				if err := e.store.SaveDownload(ctx, item); err != nil {
 					return summary, err
 				}
-				summary.Downloaded++
-				summary.Pending--
-				continue
+				if err = e.stage(ctx, item); err == nil {
+					summary.Downloaded++
+					summary.Pending--
+					continue
+				}
 			}
 		}
 		if err := ctx.Err(); err != nil {
@@ -292,6 +333,19 @@ func (e *Engine) Run(ctx context.Context, task model.Task) (summary Summary, ret
 		return summary, errors.New(strings.Join(issues, "; "))
 	}
 	return summary, nil
+}
+
+func (e *Engine) stage(ctx context.Context, item state.Download) error {
+	if e.cloud == nil {
+		return nil
+	}
+	if item.TagPending || item.TagFingerprint == "" {
+		return errors.New("CD2 handoff is waiting for completed audio tags")
+	}
+	if _, err := e.cloud.Stage(ctx, item); err != nil {
+		return fmt.Errorf("CD2 handoff: %w", err)
+	}
+	return nil
 }
 
 // RetagSummary describes a metadata repair of tracked files. Audio is never
@@ -333,6 +387,16 @@ func (e *Engine) Retag(ctx context.Context, task model.Task) (RetagSummary, erro
 	for _, item := range items {
 		if err := ctx.Err(); err != nil {
 			return summary, err
+		}
+		if e.cloud != nil {
+			handedOff, err := e.cloud.Ready(ctx, task.ID, providerName, item.TrackID)
+			if err != nil {
+				return summary, err
+			}
+			if handedOff {
+				summary.Skipped++
+				continue
+			}
 		}
 		if !completeFile(item, directory) && !(item.TagPending && localFile(item.Path, directory)) {
 			summary.Failed++

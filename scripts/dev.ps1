@@ -1,7 +1,7 @@
 #requires -Version 5.1
 [CmdletBinding()]
 param(
-    [ValidateSet('build', 'test', 'dev', 'validate', 'sync', 'retag', 'serve', 'status')]
+    [ValidateSet('build', 'test', 'dev', 'validate', 'sync', 'retag', 'serve', 'status', 'cloud-check', 'cloud-reconcile')]
     [string]$Action = 'validate',
     [string]$Config = 'config.yaml',
     [string]$Task = ''

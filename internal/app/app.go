@@ -16,6 +16,7 @@ import (
 	"github.com/gofrs/flock"
 
 	"meloport/internal/chksz"
+	"meloport/internal/cloud115"
 	"meloport/internal/config"
 	"meloport/internal/download"
 	"meloport/internal/model"
@@ -40,9 +41,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 		}
 		_, err := fmt.Fprintln(stdout, version)
 		return err
-	case "serve", "sync", "retag", "validate", "status", "playlist", "search":
+	case "serve", "sync", "retag", "validate", "status", "playlist", "search", "cloud-check", "cloud-reconcile":
 	default:
-		return errors.New("unknown command; use serve, sync, retag, playlist, search, validate, status or version")
+		return errors.New("unknown command; use serve, sync, retag, playlist, search, validate, status, cloud-check, cloud-reconcile or version")
 	}
 	flags := flag.NewFlagSet("meloport "+command, flag.ContinueOnError)
 	// flag's default diagnostics echo invalid values, which may contain a key.
@@ -53,6 +54,10 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 	var limit *int
 	var searchPlatform, keyword *string
 	var offset *int
+	var downURL *bool
+	if command == "cloud-check" {
+		downURL = flags.Bool("downurl", false, "verify that a completed file resolves, without printing the temporary URL")
+	}
 	if command == "sync" || command == "playlist" {
 		taskID = flags.String("task", "", "run one enabled task by ID; empty runs all enabled tasks")
 	}
@@ -72,7 +77,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 		limit = flags.Int("limit", 20, "number of recent task runs, 1-1000")
 	}
 	flags.Usage = func() {
-		fmt.Fprintln(stderr, "Meloport: scheduled playlist downloads. Commands: serve, sync, retag, playlist, search, validate, status, version.")
+		fmt.Fprintln(stderr, "Meloport: scheduled playlist downloads. Commands: serve, sync, retag, playlist, search, validate, status, cloud-check, cloud-reconcile, version.")
 		fmt.Fprintf(stderr, "Usage: meloport %s [options]\n", command)
 		flags.SetOutput(stderr)
 		flags.PrintDefaults()
@@ -119,6 +124,16 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(runs)
+	}
+	var drive *cloud115.Client
+	if command == "cloud-check" || command == "cloud-reconcile" || cfg.Cloud115.Enabled && (command == "serve" || command == "sync") {
+		drive, err = cloudClient(cfg.Cloud115)
+		if err != nil {
+			return err
+		}
+		if command == "cloud-check" {
+			return checkCloud(ctx, drive, cfg.Cloud115.TargetCID, *downURL, stdout)
+		}
 	}
 	logger := slog.New(slog.NewJSONHandler(stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	metadataHTTP := platform.NewHTTP(nil, cfg.Metadata.Timeout.Duration, cfg.Metadata.MinInterval.Duration)
@@ -198,6 +213,28 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 		return err
 	}
 	engine := syncer.NewWithSources(metadata, metadata, downloader, store)
+	var cloud *cloudRuntime
+	if cfg.Cloud115.Enabled {
+		cloud = newCloudRuntime(cfg.Cloud115, drive, store)
+		engine.UseCloudStorage(cloud.sync)
+	}
+	if command == "cloud-reconcile" {
+		if err := cloud.sync.Reconcile(ctx); err != nil {
+			return err
+		}
+		files, err := store.ListCloudFiles(ctx, cfg.Cloud115.TargetCID)
+		if err != nil {
+			return err
+		}
+		var confirmed int
+		for _, file := range files {
+			if file.ID != "" {
+				confirmed++
+			}
+		}
+		_, err = fmt.Fprintf(stdout, "115 files: %d confirmed, %d pending.\n", confirmed, len(files)-confirmed)
+		return err
+	}
 	if command == "retag" {
 		enc := json.NewEncoder(stdout)
 		var runErrors []error
@@ -230,6 +267,11 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 				}
 			}
 		}
+		if cloud != nil && ctx.Err() == nil {
+			if err := cloud.sync.Reconcile(ctx); err != nil {
+				runErrors = append(runErrors, fmt.Errorf("reconcile 115 files: %w", err))
+			}
+		}
 		return errors.Join(runErrors...)
 	}
 	assetDirectory := ""
@@ -243,7 +285,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 			return errors.New("invalid Web asset directory")
 		}
 	}
-	return serve(ctx, cfg, selected, engine, store, logger, serviceOptions{ConfigPath: *path, WebDir: assetDirectory, Store: store, Metadata: metadata})
+	return serve(ctx, cfg, selected, engine, store, logger, serviceOptions{ConfigPath: *path, WebDir: assetDirectory, Store: store, Metadata: metadata, Cloud: cloud})
 }
 
 func optionalEnv(name string) string {

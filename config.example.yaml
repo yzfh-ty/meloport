@@ -30,6 +30,20 @@ download:
 server:
   listen: "127.0.0.1:8080" # Local Web management and health checks. Set "" to disable.
 
+# Optional CD2 handoff, 115 verification and playback. Restart after changes here.
+cloud115:
+  enabled: false
+  access_token_env: MELOPORT_115_ACCESS_TOKEN
+  # target_cid: "123456" # Dedicated non-root 115 directory that CD2 uploads into.
+  staging_dir: data/115-staging # CD2 watches this tree. Same filesystem as task directories.
+  strm_dir: data/strm
+  media_listen: "127.0.0.1:8081"
+  media_base_url: "http://127.0.0.1:8081" # Use the HTTPS address reachable by remote players.
+  poll_interval: 1m
+  timeout: 15s
+  # navidrome_url: "http://127.0.0.1:4533"
+  # navidrome_mount_root: "/music/115" # Target directory as seen by the music server.
+
 tasks:
   - id: favorites
     platform: netease
