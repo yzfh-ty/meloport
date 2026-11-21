@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -47,6 +49,7 @@ type webController struct {
 	editor    *config.Editor
 	logger    *slog.Logger
 	webDir    string
+	configDir string
 	stopping  bool
 	rankingMu sync.Mutex
 	rankings  map[string]rankingCache
@@ -61,6 +64,9 @@ func newWebController(cfg *config.Config, tasks []config.Task, queue *taskQueue,
 	c := &webController{cfg: cfg, queue: queue, logger: logger, store: options.Store, metadata: options.Metadata, webDir: options.WebDir, tasks: make(map[string]config.Task), entries: make(map[string]cron.EntryID), scheduler: cron.New(cron.WithLocation(cfg.Location)), rankings: make(map[string]rankingCache)}
 	if options.ConfigPath != "" {
 		c.editor = config.NewEditor(options.ConfigPath)
+		if absolute, err := filepath.Abs(options.ConfigPath); err == nil {
+			c.configDir = filepath.Dir(absolute)
+		}
 	}
 	for _, task := range tasks {
 		c.tasks[task.ID] = task
@@ -161,6 +167,12 @@ func (q *taskQueue) snapshot() queueView {
 }
 
 func (q *taskQueue) isRunning(id string) bool { q.mu.Lock(); defer q.mu.Unlock(); return q.running[id] }
+
+func (q *taskQueue) anyRunning() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return len(q.running) > 0
+}
 
 func (c *webController) handler(health http.Handler, ready *atomic.Bool) http.Handler {
 	mux := http.NewServeMux()
@@ -302,7 +314,11 @@ func (c *webController) overview(w http.ResponseWriter, r *http.Request) {
 		}
 		views = append(views, view)
 	}
-	webJSON(w, 200, map[string]any{"timezone": c.cfg.Timezone, "schedule": c.cfg.Schedule, "quality": c.cfg.Quality, "fallback_to_api": c.cfg.Metadata.FallbackToAPI, "api_key_env": c.cfg.API.KeyEnv, "api_key_configured": chksz.KeyConfigured(c.cfg.API.KeyEnv), "stats": map[string]any{"tasks": len(views), "enabled": enabled, "downloaded": stats.Downloaded, "bytes": stats.Bytes}, "queue": queue, "tasks": views, "runs": runs})
+	musicDir := c.cfg.Storage.MusicDirConfigured
+	if musicDir == "" {
+		musicDir = c.cfg.Storage.MusicDir
+	}
+	webJSON(w, 200, map[string]any{"timezone": c.cfg.Timezone, "schedule": c.cfg.Schedule, "quality": c.cfg.Quality, "music_dir": musicDir, "music_dir_resolved": c.cfg.Storage.MusicDir, "fallback_to_api": c.cfg.Metadata.FallbackToAPI, "api_key_env": c.cfg.API.KeyEnv, "api_key_configured": chksz.KeyConfigured(c.cfg.API.KeyEnv), "stats": map[string]any{"tasks": len(views), "enabled": enabled, "downloaded": stats.Downloaded, "bytes": stats.Bytes}, "queue": queue, "tasks": views, "runs": runs})
 }
 
 func (c *webController) available(w http.ResponseWriter) bool {
@@ -393,6 +409,24 @@ func (c *webController) settings(w http.ResponseWriter, r *http.Request) {
 	}
 	c.changes.Lock()
 	defer c.changes.Unlock()
+	if input.MusicDir != nil {
+		nextRoot, err := config.ResolveMusicDirectory(c.configDir, *input.MusicDir)
+		if err != nil {
+			editError(w, err)
+			return
+		}
+		c.mu.RLock()
+		currentRoot := c.cfg.Storage.MusicDir
+		c.mu.RUnlock()
+		sameRoot := filepath.Clean(nextRoot) == filepath.Clean(currentRoot)
+		if runtime.GOOS == "windows" {
+			sameRoot = strings.EqualFold(filepath.Clean(nextRoot), filepath.Clean(currentRoot))
+		}
+		if !sameRoot && c.queue.anyRunning() {
+			webError(w, http.StatusConflict, "a sync is running; wait for it to finish before changing the download folder")
+			return
+		}
+	}
 	cfg, err := c.editor.Settings(input)
 	if err != nil {
 		editError(w, err)

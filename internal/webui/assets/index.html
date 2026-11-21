@@ -713,26 +713,24 @@
                         使用 IANA 时区名称，例如 Asia/Shanghai 或 UTC。
                       </p>
                     </div>
+                    <div class="field schedule-field" id="settings-schedule-editor">
+                      <label for="settings-schedule">默认同步计划</label>
+                      <div class="schedule-controls">
+                        <select id="settings-schedule" aria-describedby="settings-schedule-error settings-schedule-hint"></select>
+                        <div id="settings-schedule-weekday-field" class="schedule-detail" hidden><label for="settings-schedule-weekday">星期</label><select id="settings-schedule-weekday"></select></div>
+                        <div id="settings-schedule-time-field" class="schedule-detail"><label for="settings-schedule-time">时间</label><input id="settings-schedule-time" type="time" value="03:00" step="60" /></div>
+                        <div id="settings-schedule-interval-field" class="schedule-detail" hidden><label for="settings-schedule-interval" id="settings-schedule-interval-label">间隔</label><select id="settings-schedule-interval"></select></div>
+                      </div>
+                      <span id="settings-schedule-error" class="field-error" hidden></span>
+                      <p id="settings-schedule-hint" class="field-hint"></p>
+                    </div>
                     <div class="field">
-                      <label for="settings-schedule">默认同步时间</label
-                      ><input
-                        id="settings-schedule"
-                        name="schedule"
-                        class="mono"
-                        type="text"
-                        required
-                        maxlength="100"
-                        placeholder="0 3 * * *"
-                        aria-describedby="settings-schedule-error"
-                      /><span
-                        id="settings-schedule-error"
-                        class="field-error"
-                        hidden
-                      ></span>
-                      <p class="field-hint">
-                        标准五字段 cron：分钟、小时、日、月、星期。例如 0 3 * *
-                        * 表示每天 03:00。
-                      </p>
+                      <label for="settings-music-dir">下载根目录</label>
+                      <input id="settings-music-dir" name="music_dir" type="text" required maxlength="4096" placeholder="填写运行环境中的音乐保存路径" aria-describedby="settings-music-dir-error settings-music-dir-hint settings-music-dir-resolved" />
+                      <span id="settings-music-dir-error" class="field-error" hidden></span>
+                      <p id="settings-music-dir-resolved" class="field-hint path-hint"></p>
+                      <p id="settings-music-dir-hint" class="field-hint">填写 Meloport 运行环境中的路径；Docker 部署时填写容器内已挂载的路径，不是浏览器设备的目录。</p>
+                      <p class="field-hint">更改目录不会移动或删除已有音乐；下次同步会在新目录补齐歌曲，可能重新下载。</p>
                     </div>
                     <div class="field">
                       <label for="settings-quality">默认音质</label
@@ -936,24 +934,16 @@
                 时间、音质与保存目录<span>留空时使用默认规则</span>
               </summary>
               <div class="form-grid">
-                <div class="field">
-                  <label for="task-schedule">独立同步时间</label
-                  ><input
-                    id="task-schedule"
-                    name="schedule"
-                    class="mono"
-                    type="text"
-                    maxlength="100"
-                    placeholder="留空继承全局时间"
-                    aria-describedby="task-schedule-error task-schedule-hint"
-                  /><span
-                    id="task-schedule-error"
-                    class="field-error"
-                    hidden
-                  ></span>
-                  <p id="task-schedule-hint" class="field-hint">
-                    五字段 cron；留空继承全局时间。
-                  </p>
+                <div class="field schedule-field" id="task-schedule-editor">
+                  <label for="task-schedule">同步计划</label>
+                  <div class="schedule-controls">
+                    <select id="task-schedule" aria-describedby="task-schedule-error task-schedule-hint"></select>
+                    <div id="task-schedule-weekday-field" class="schedule-detail" hidden><label for="task-schedule-weekday">星期</label><select id="task-schedule-weekday"></select></div>
+                    <div id="task-schedule-time-field" class="schedule-detail" hidden><label for="task-schedule-time">时间</label><input id="task-schedule-time" type="time" value="03:00" step="60" /></div>
+                    <div id="task-schedule-interval-field" class="schedule-detail" hidden><label for="task-schedule-interval" id="task-schedule-interval-label">间隔</label><select id="task-schedule-interval"></select></div>
+                  </div>
+                  <span id="task-schedule-error" class="field-error" hidden></span>
+                  <p id="task-schedule-hint" class="field-hint">继承默认计划。</p>
                 </div>
                 <div class="field">
                   <label for="task-quality">音质</label
@@ -978,7 +968,7 @@
                   hidden
                 ></span>
                 <p class="field-hint">
-                  相对于音乐根目录。保持目录稳定，便于复用下载记录。
+                  相对目录随下载根目录变化；绝对目录保持固定。保持目录稳定，便于复用下载记录。
                 </p>
               </div>
             </details>

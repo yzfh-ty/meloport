@@ -76,8 +76,9 @@ type Metadata struct {
 }
 
 type Storage struct {
-	Database string `yaml:"database"`
-	MusicDir string `yaml:"music_dir"`
+	Database           string `yaml:"database"`
+	MusicDir           string `yaml:"music_dir"`
+	MusicDirConfigured string `yaml:"-"`
 }
 
 type Download struct {
@@ -207,6 +208,7 @@ func (c *Config) validate(baseDir string) error {
 		return errors.New("storage.database and storage.music_dir must be nonempty filesystem paths")
 	}
 	c.Storage.Database = resolvePath(baseDir, c.Storage.Database)
+	c.Storage.MusicDirConfigured = c.Storage.MusicDir
 	c.Storage.MusicDir = resolvePath(baseDir, c.Storage.MusicDir)
 	if c.Server.Listen != "" {
 		host, _, err := net.SplitHostPort(c.Server.Listen)
@@ -401,6 +403,37 @@ func resolvePath(base, path string) string {
 		return filepath.Clean(path)
 	}
 	return filepath.Clean(filepath.Join(base, path))
+}
+
+// ResolveMusicDirectory validates the local download root without creating it.
+// Relative paths are resolved beside the configuration file. Missing child
+// folders are allowed; an existing file anywhere in their ancestry is not.
+func ResolveMusicDirectory(baseDir, value string) (string, error) {
+	if strings.TrimSpace(value) == "" || len(value) > 32767 || strings.ContainsAny(value, "\x00\r\n") {
+		return "", errors.New("storage.music_dir must be a nonempty valid folder path")
+	}
+	if filepath.VolumeName(value) != "" && !filepath.IsAbs(value) {
+		return "", errors.New("storage.music_dir must use a full drive path or a relative folder path")
+	}
+	resolved, err := filepath.Abs(resolvePath(baseDir, value))
+	if err != nil {
+		return "", errors.New("storage.music_dir cannot be resolved as a folder path")
+	}
+	for current := resolved; ; current = filepath.Dir(current) {
+		info, err := os.Stat(current)
+		if err == nil {
+			if !info.IsDir() {
+				return "", errors.New("storage.music_dir must be a folder; the path or a parent is an existing file")
+			}
+			return resolved, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", errors.New("storage.music_dir is invalid or inaccessible; choose an accessible folder")
+		}
+		if parent := filepath.Dir(current); parent == current {
+			return "", errors.New("storage.music_dir has no available filesystem root")
+		}
+	}
 }
 
 func validQuality(value string) bool {

@@ -29,6 +29,68 @@
   }, { once: true });
 })();
 
+// Schedule helpers are kept pure so existing plans can be tested without a browser.
+const scheduleUI = (() => {
+  const hours = ['1', '2', '3', '4', '6', '8', '12'];
+  const minutes = ['5', '10', '15', '20', '30'];
+  const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+  const integer = (value, max) => /^\d{1,2}$/.test(value) && Number(value) <= max;
+  const clock = (hour, minute) => `${String(Number(hour)).padStart(2, '0')}:${String(Number(minute)).padStart(2, '0')}`;
+
+  function decode(value, allowInherit = false) {
+    const original = String(value || '');
+    const result = { mode: 'custom', time: '03:00', weekday: '1', interval: '2', original };
+    const fields = original.trim().split(/\s+/);
+    if (!original.trim() && allowInherit) return { ...result, mode: 'inherit' };
+    if (fields.length !== 5 || fields[2] !== '*' || fields[3] !== '*') return result;
+    const [minute, hour, , , day] = fields;
+    if (integer(minute, 59) && integer(hour, 23)) {
+      result.time = clock(hour, minute);
+      if (day === '*') return { ...result, mode: 'daily' };
+      if (day === '1-5' || day.toUpperCase() === 'MON-FRI') return { ...result, mode: 'weekdays' };
+      if (/^[0-7]$/.test(day)) return { ...result, mode: 'weekly', weekday: String(Number(day) % 7) };
+      const named = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].indexOf(day.toUpperCase());
+      if (named !== -1) return { ...result, mode: 'weekly', weekday: String(named) };
+    }
+    if (day !== '*') return result;
+    if (minute === '0' && (hour === '*' || /^\*\/\d+$/.test(hour))) {
+      const interval = hour === '*' ? '1' : hour.slice(2);
+      if (hours.includes(interval)) return { ...result, mode: 'hours', interval };
+    }
+    if (hour === '*' && /^\*\/\d+$/.test(minute) && minutes.includes(minute.slice(2))) return { ...result, mode: 'minutes', interval: minute.slice(2) };
+    return result;
+  }
+
+  function encode(model) {
+    if (model.mode === 'inherit') return '';
+    if (model.mode === 'custom' && String(model.original || '').trim()) return model.original;
+    if (model.mode === 'hours' && hours.includes(String(model.interval))) return `0 */${model.interval} * * *`;
+    if (model.mode === 'minutes' && minutes.includes(String(model.interval))) return `*/${model.interval} * * * *`;
+    if (['daily', 'weekdays', 'weekly'].includes(model.mode)) {
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(model.time || '')) throw new Error('请选择有效的同步时间。');
+      const [hour, minute] = model.time.split(':').map(Number);
+      if (model.mode === 'weekly' && !/^[0-6]$/.test(String(model.weekday))) throw new Error('请选择每周同步的星期。');
+      const day = model.mode === 'daily' ? '*' : model.mode === 'weekdays' ? '1-5' : model.weekday;
+      return `${minute} ${hour} * * ${day}`;
+    }
+    throw new Error('请选择有效的同步计划。');
+  }
+
+  function describe(value, allowInherit = false) {
+    const model = decode(value, allowInherit);
+    if (model.mode === 'daily') return `每天 ${model.time}`;
+    if (model.mode === 'weekdays') return `周一至周五 ${model.time}`;
+    if (model.mode === 'weekly') return `每周${weekdays[Number(model.weekday)]} ${model.time}`;
+    if (model.mode === 'hours') return `每 ${model.interval} 小时（整点）`;
+    if (model.mode === 'minutes') return `每 ${model.interval} 分钟`;
+    if (model.mode === 'inherit') return '继承默认计划';
+    return '已有自定义计划，保持不变';
+  }
+
+  return { decode, encode, describe, hours, minutes };
+})();
+// End schedule helpers.
+
 document.addEventListener('DOMContentLoaded', () => {
   'use strict';
 
@@ -51,7 +113,8 @@ document.addEventListener('DOMContentLoaded', () => {
     busy: new Set(), overviewVersion: 0, overviewController: null, overviewPromise: null,
     previewController: null, rankingDetail: null, pollTimer: null, toastTimer: null, dialogTriggers: new Map(),
     search: { keyword: '', platform: 'netease', offset: 0, limit: 20, tracks: [], loaded: false, loading: false, controller: null },
-    rankings: { platform: 'netease', catalog: {}, loading: false, error: '', filter: '', category: '', controller: null }
+    rankings: { platform: 'netease', catalog: {}, loading: false, error: '', filter: '', category: '', controller: null },
+    schedules: {}
   };
 
   function element(tag, className, text) {
@@ -230,7 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
     text('stat-bytes', bytes(data.stats.bytes));
     text('nav-task-count', number(data.stats.tasks));
     text('task-count', data.tasks.length);
-    text('task-timezone', `默认 ${data.schedule} · ${data.timezone}`);
+    text('task-timezone', `默认：${scheduleUI.describe(data.schedule)} · ${data.timezone}`);
     $('add-task-button').disabled = false;
     const queue = data.queue || {};
     const running = Array.isArray(queue.running) ? queue.running.length : 0;
@@ -285,7 +348,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const filter = $('task-filter').value.trim().toLocaleLowerCase();
     const tasks = state.overview.tasks;
     const visible = tasks.filter((task) => `${task.id} ${task.playlist || ''} ${task.source_id || ''} ${platforms[task.platform] || ''}`.toLocaleLowerCase().includes(filter));
-    const signature = JSON.stringify([visible, filter, [...state.busy], state.overview.api_key_configured, state.overview.queue && state.overview.queue.paused]);
+    const signature = JSON.stringify([visible, filter, [...state.busy], state.overview.schedule, state.overview.api_key_configured, state.overview.queue && state.overview.queue.paused]);
     show('tasks-loading', false);
     show('tasks-empty', tasks.length === 0);
     show('tasks-no-match', tasks.length > 0 && visible.length === 0);
@@ -320,7 +383,7 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleLabel.append(toggle, element('span', '', state.busy.has(`task:${task.id}:toggle`) ? '正在保存' : task.enabled ? '已启用' : '已停用'));
         platform.append(toggleLabel);
         const schedule = cell('同步计划');
-        schedule.append(element('span', 'mono', task.effective_schedule || task.schedule || state.overview.schedule), element('span', 'cell-subtitle', task.schedule ? '独立时间' : '继承全局'));
+        schedule.append(element('span', '', scheduleUI.describe(task.effective_schedule || task.schedule || state.overview.schedule)), element('span', 'cell-subtitle', task.schedule ? '独立计划' : '继承默认'));
         const latest = cell('最近运行');
         latest.append(statusBadge(task.running ? 'running' : task.queued ? 'queued' : task.last_run ? task.last_run.status : ''));
         if (task.last_run) latest.append(element('span', 'cell-subtitle', date(task.last_run.started_at, true)));
@@ -450,7 +513,67 @@ document.addEventListener('DOMContentLoaded', () => {
     summary.focus();
   }
 
-  function validCron(value) { return value.trim().split(/\s+/).length === 5 && !value.includes('=') && !value.startsWith('@'); }
+  function scheduleModel(prefix) {
+    return { mode: $(`${prefix}-schedule`).value, time: $(`${prefix}-schedule-time`).value, weekday: $(`${prefix}-schedule-weekday`).value, interval: $(`${prefix}-schedule-interval`).value, original: state.schedules[prefix].original };
+  }
+
+  function readSchedule(prefix) {
+    const saved = state.schedules[prefix];
+    if (!saved.changed && (saved.original || prefix === 'task')) return saved.original;
+    return scheduleUI.encode(scheduleModel(prefix));
+  }
+
+  function updateScheduleControls(prefix) {
+    const mode = $(`${prefix}-schedule`).value;
+    show(`${prefix}-schedule-time-field`, ['daily', 'weekdays', 'weekly'].includes(mode));
+    show(`${prefix}-schedule-weekday-field`, mode === 'weekly');
+    show(`${prefix}-schedule-interval-field`, mode === 'hours' || mode === 'minutes');
+    const interval = $(`${prefix}-schedule-interval`);
+    const values = mode === 'minutes' ? scheduleUI.minutes : scheduleUI.hours;
+    const previous = interval.value;
+    interval.replaceChildren(...values.map((value) => { const option = element('option', '', `${value} ${mode === 'minutes' ? '分钟' : '小时'}`); option.value = value; return option; }));
+    interval.value = values.includes(previous) ? previous : values[0];
+    text(`${prefix}-schedule-interval-label`, mode === 'minutes' ? '分钟间隔' : '小时间隔');
+    if (mode === 'custom') {
+      text(`${prefix}-schedule-hint`, '已有自定义计划，保持不变。选择上方其他计划后才会替换。');
+    } else if (mode === 'inherit') {
+      text(`${prefix}-schedule-hint`, `继承默认：${state.overview ? scheduleUI.describe(state.overview.schedule) : '读取后显示'}。`);
+    } else {
+      try {
+        const description = scheduleUI.describe(scheduleUI.encode(scheduleModel(prefix)));
+        text(`${prefix}-schedule-hint`, `${description}，按${prefix === 'settings' ? '上方' : '系统设置中的'}时区运行。${mode === 'hours' ? '从每天 00:00 起计算。' : mode === 'minutes' ? '从每小时第 0 分钟起计算。' : ''}`);
+      } catch { text(`${prefix}-schedule-hint`, '请选择完整的同步计划。'); }
+    }
+  }
+
+  function setSchedule(prefix, value) {
+    const model = scheduleUI.decode(value, prefix === 'task');
+    state.schedules[prefix] = { original: String(value || ''), changed: false };
+    const custom = $(`${prefix}-schedule`).querySelector('[value="custom"]');
+    custom.hidden = model.mode !== 'custom';
+    $(`${prefix}-schedule`).value = model.mode;
+    $(`${prefix}-schedule-time`).value = model.time;
+    $(`${prefix}-schedule-weekday`).value = model.weekday;
+    updateScheduleControls(prefix);
+    if (['hours', 'minutes'].includes(model.mode)) $(`${prefix}-schedule-interval`).value = model.interval;
+    updateScheduleControls(prefix);
+  }
+
+  function setupSchedule(prefix) {
+    const select = $(`${prefix}-schedule`);
+    const options = [...(prefix === 'task' ? [['inherit', '继承默认计划']] : []), ['daily', '每天'], ['weekdays', '工作日（周一至周五）'], ['weekly', '每周'], ['hours', '每隔几小时'], ['minutes', '每隔几分钟'], ['custom', '已有自定义计划，保持不变']];
+    select.replaceChildren(...options.map(([value, label]) => { const option = element('option', '', label); option.value = value; return option; }));
+    const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    $(`${prefix}-schedule-weekday`).replaceChildren(...days.map((label, value) => { const option = element('option', '', label); option.value = String(value); return option; }));
+    const editor = $(`${prefix}-schedule-editor`);
+    editor.addEventListener('input', () => { state.schedules[prefix].changed = true; });
+    editor.addEventListener('change', () => {
+      state.schedules[prefix].changed = true;
+      updateScheduleControls(prefix);
+      if (prefix === 'settings') markSettingsDirty();
+    });
+    setSchedule(prefix, prefix === 'task' ? '' : '0 3 * * *');
+  }
 
   function openTask(task, trigger, preset = null) {
     state.editTask = task;
@@ -471,7 +594,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('task-source-type').value = sourceType;
     $('task-playlist').value = task ? task.playlist || '' : '';
     $('task-source-id').value = task ? task.source_id || '' : preset ? preset.sourceId : '';
-    $('task-schedule').value = task ? task.schedule || '' : '';
+    setSchedule('task', task ? task.schedule || '' : '');
     $('task-directory').value = task ? task.directory || '' : '';
     $('task-enabled').checked = task ? Boolean(task.enabled) : true;
     $('task-form').querySelector('.advanced-fields').open = Boolean(task && (task.schedule || task.quality || task.directory));
@@ -479,8 +602,6 @@ document.addEventListener('DOMContentLoaded', () => {
     renderTaskSource();
     text('task-dialog-title', task ? '编辑订阅任务' : '新建订阅任务');
     text('task-submit', task ? '保存修改' : '创建任务');
-    text('task-schedule-hint', `五字段 cron；留空继承 ${state.overview ? state.overview.schedule : '全局时间'}。`);
-    $('task-schedule').placeholder = state.overview ? `继承 ${state.overview.schedule}` : '留空继承全局时间';
     openDialog('task-dialog', trigger);
     (task ? (sourceType === 'ranking' ? $('task-source-id') : $('task-playlist')) : preset ? $('task-id') : $('task-id')).focus();
   }
@@ -492,7 +613,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const input = {
       id: $('task-id').value.trim(), platform: $('task-platform').value, source_type: $('task-source-type').value,
       source_id: $('task-source-id').value.trim(), playlist: $('task-playlist').value.trim(),
-      schedule: $('task-schedule').value.trim(), quality: $('task-quality').value, directory: $('task-directory').value.trim(), enabled: $('task-enabled').checked
+      schedule: '', quality: $('task-quality').value, directory: $('task-directory').value.trim(), enabled: $('task-enabled').checked
     };
     const errors = [];
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(input.id) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(input.id)) errors.push({ field: 'task-id', message: '任务标识需为 1–64 位字母、数字、下划线或短横线，并避免系统保留名称。' });
@@ -504,7 +625,7 @@ document.addEventListener('DOMContentLoaded', () => {
       input.source_id = '';
       if (!input.playlist) errors.push({ field: 'task-playlist', message: '请填写歌单链接、ID 或分享码。' });
     }
-    if (input.schedule && !validCron(input.schedule)) errors.push({ field: 'task-schedule', message: '请填写五字段 cron；也可留空继承全局时间。' });
+    try { input.schedule = readSchedule('task'); } catch (error) { errors.push({ field: 'task-schedule', message: error.message }); }
     if (errors.length) { formErrors('task', errors); return; }
     const editing = state.editTask;
     try {
@@ -643,6 +764,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function markSettingsDirty() {
+    state.settingsDirty = true;
+    text('settings-dirty', '有未保存的更改。');
+    const saved = state.overview;
+    if (saved && $('settings-music-dir').value.trim() !== (saved.music_dir || '')) text('settings-music-dir-resolved', '保存后将在新目录补齐歌曲；当前草稿尚未生效。');
+    else if (saved) text('settings-music-dir-resolved', saved.music_dir_resolved ? `当前实际目录：${saved.music_dir_resolved}` : '');
+  }
+
   function renderSettings(force = false) {
     const data = state.overview;
     if (!data) return;
@@ -651,7 +780,9 @@ document.addEventListener('DOMContentLoaded', () => {
     text('settings-key-env', data.api_key_env || 'CHKSZ_API_KEY');
     if (state.settingsDirty && !force) return;
     $('settings-timezone').value = data.timezone || '';
-    $('settings-schedule').value = data.schedule || '';
+    setSchedule('settings', data.schedule || '');
+    $('settings-music-dir').value = data.music_dir || '';
+    text('settings-music-dir-resolved', data.music_dir_resolved ? `当前实际目录：${data.music_dir_resolved}` : '');
     $('settings-quality').value = data.quality || 'lossless';
     $('settings-fallback').checked = Boolean(data.fallback_to_api);
     $('settings-fields').disabled = state.busy.has('settings');
@@ -660,22 +791,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function saveSettings(event) {
     event.preventDefault();
+    if (state.busy.has('settings')) return;
     clearErrors('settings');
-    const input = { timezone: $('settings-timezone').value.trim(), schedule: $('settings-schedule').value.trim(), quality: $('settings-quality').value, fallback_to_api: $('settings-fallback').checked };
+    const input = { timezone: $('settings-timezone').value.trim(), schedule: '', music_dir: $('settings-music-dir').value.trim(), quality: $('settings-quality').value, fallback_to_api: $('settings-fallback').checked };
     const errors = [];
     if (!input.timezone) errors.push({ field: 'settings-timezone', message: '请填写 IANA 时区名称。' });
-    if (!validCron(input.schedule)) errors.push({ field: 'settings-schedule', message: '默认同步时间需要使用五字段 cron 表达式。' });
+    if (!input.music_dir) errors.push({ field: 'settings-music-dir', message: '请填写下载根目录。' });
+    try { input.schedule = readSchedule('settings'); } catch (error) { errors.push({ field: 'settings-schedule', message: error.message }); }
     if (errors.length) { formErrors('settings', errors); return; }
     state.busy.add('settings');
     try {
       await busyButton($('settings-submit'), '正在保存', async () => {
         $('settings-fields').disabled = true;
         await request('/api/settings', { method: 'PUT', body: input });
+        const previous = state.overview;
+        if (previous) state.overview = { ...previous, ...input, music_dir_resolved: previous.music_dir === input.music_dir ? previous.music_dir_resolved : '' };
         state.settingsDirty = false;
         await refreshOverview({ force: true });
         renderSettings(true);
         text('settings-dirty', '设置已保存到本机。');
-        toast('默认同步规则已更新');
+        toast('下载目录与默认规则已更新');
       });
     } catch (error) { formErrors('settings', [{ message: error.message }]); }
     finally {
@@ -1046,7 +1181,8 @@ document.addEventListener('DOMContentLoaded', () => {
   $('delete-confirm').addEventListener('click', deleteTask);
   $('history-task-filter').addEventListener('change', () => renderHistory(true));
   $('history-status-filter').addEventListener('change', () => renderHistory(true));
-  $('settings-form').addEventListener('input', () => { state.settingsDirty = true; text('settings-dirty', '有未保存的更改。'); });
+  $('settings-form').addEventListener('input', markSettingsDirty);
+  $('settings-form').addEventListener('change', markSettingsDirty);
   $('settings-form').addEventListener('submit', saveSettings);
   $('search-form').addEventListener('submit', (event) => { event.preventDefault(); searchSongs(0, true); });
   $('search-prev').addEventListener('click', () => searchSongs(Math.max(0, state.search.offset - state.search.limit)));
@@ -1105,6 +1241,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (state.search.controller) state.search.controller.abort();
     if (state.rankings.controller) state.rankings.controller.abort();
   });
+  setupSchedule('settings');
+  setupSchedule('task');
   setupNavigation();
   route();
   refreshOverview();

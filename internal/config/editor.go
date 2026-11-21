@@ -33,10 +33,11 @@ type TaskInput struct {
 }
 
 type SettingsInput struct {
-	Timezone      string `json:"timezone"`
-	Schedule      string `json:"schedule"`
-	Quality       string `json:"quality"`
-	FallbackToAPI bool   `json:"fallback_to_api"`
+	Timezone      string  `json:"timezone"`
+	Schedule      string  `json:"schedule"`
+	Quality       string  `json:"quality"`
+	FallbackToAPI bool    `json:"fallback_to_api"`
+	MusicDir      *string `json:"music_dir,omitempty"`
 }
 
 // Editor applies scoped YAML-node changes. Readers and writers through this
@@ -157,6 +158,20 @@ func (e *Editor) Delete(id string) (*Config, error) {
 
 func (e *Editor) Settings(input SettingsInput) (*Config, error) {
 	return e.update(func(root *yaml.Node) error {
+		if input.MusicDir != nil {
+			if _, err := ResolveMusicDirectory(filepath.Dir(e.path), *input.MusicDir); err != nil {
+				return err
+			}
+			storage := mappingField(root, "storage")
+			if storage == nil {
+				if existing := field(root, "storage"); existing != nil && existing.Tag != "!!null" {
+					return errors.New("storage must be a plain YAML mapping")
+				}
+				storage = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+				setNode(root, "storage", storage)
+			}
+			setScalar(storage, "music_dir", *input.MusicDir, "!!str")
+		}
 		setScalar(root, "timezone", input.Timezone, "!!str")
 		setScalar(root, "schedule", input.Schedule, "!!str")
 		setScalar(root, "quality", input.Quality, "!!str")
