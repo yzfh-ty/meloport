@@ -36,6 +36,7 @@ type serviceOptions struct {
 	Metadata   *provider.Manager
 	Audio      audioLibrary
 	Cloud      *cloudRuntime
+	Auth       *managementAuth
 }
 
 type webController struct {
@@ -56,6 +57,7 @@ type webController struct {
 	stopping  bool
 	cloud     *cloudRuntime
 	cloudBoot config.Cloud115
+	auth      *managementAuth
 	rankingMu sync.Mutex
 	rankings  map[string]rankingCache
 	// Protected by changes. Keep task and storage edits clear of a running repair.
@@ -70,6 +72,7 @@ type rankingCache struct {
 func newWebController(cfg *config.Config, tasks []config.Task, queue *taskQueue, logger *slog.Logger, options serviceOptions) *webController {
 	c := &webController{cfg: cfg, queue: queue, logger: logger, store: options.Store, metadata: options.Metadata, audio: options.Audio, webDir: options.WebDir, tasks: make(map[string]config.Task), entries: make(map[string]cron.EntryID), scheduler: cron.New(cron.WithLocation(cfg.Location)), rankings: make(map[string]rankingCache)}
 	c.cloud, c.cloudBoot = options.Cloud, cfg.Cloud115
+	c.auth = options.Auth
 	if options.ConfigPath != "" {
 		c.editor = config.NewEditor(options.ConfigPath)
 		c.editor.ProtectActiveCloud(cfg.Cloud115)
@@ -185,6 +188,13 @@ func (q *taskQueue) anyRunning() bool {
 
 func (c *webController) handler(health http.Handler, ready *atomic.Bool) http.Handler {
 	mux := http.NewServeMux()
+	var protected http.Handler = mux
+	if c.auth != nil {
+		mux.HandleFunc("GET /api/session", c.auth.status)
+		mux.HandleFunc("POST /api/session", c.auth.login)
+		mux.HandleFunc("DELETE /api/session", c.auth.logout)
+		protected = c.auth.protect(mux)
+	}
 	mux.Handle("GET /healthz", health)
 	mux.Handle("GET /readyz", health)
 	mux.HandleFunc("GET /api/overview", c.overview)
@@ -262,7 +272,7 @@ func (c *webController) handler(health http.Handler, ready *atomic.Bool) http.Ha
 				}
 			}
 		}
-		mux.ServeHTTP(w, r)
+		protected.ServeHTTP(w, r)
 	})
 }
 

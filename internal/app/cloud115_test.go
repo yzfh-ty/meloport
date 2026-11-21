@@ -116,7 +116,7 @@ func TestServeCloudListenersIsolateRoutesAndCloseOnShutdown(t *testing.T) {
 		location   string
 	}{
 		{addr: managementAddr, path: "/readyz", status: http.StatusOK},
-		{addr: managementAddr, path: "/api/overview", status: http.StatusOK},
+		{addr: managementAddr, path: "/api/overview", status: http.StatusUnauthorized},
 		{addr: managementAddr, path: "/media/test", status: http.StatusNotFound},
 		{addr: mediaAddr, path: "/readyz", status: http.StatusNotFound},
 		{addr: mediaAddr, path: "/api/overview", status: http.StatusNotFound},

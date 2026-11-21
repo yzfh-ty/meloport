@@ -114,6 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
     unsupported: ['格式不支持', 'neutral'], unreadable: ['无法读取标签', 'error'], archived: ['任务已删除', 'neutral']
   };
   const state = {
+    authenticated: false,
     overview: null, route: '', editTask: null, deleteTask: null,
     taskSignature: '', historySignature: '', historyOptionsSignature: '', settingsDirty: false,
     busy: new Set(), overviewVersion: 0, overviewController: null, overviewPromise: null,
@@ -216,6 +217,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     try {
       const response = await fetch(path, settings);
+      if (response.status === 401 && path !== '/api/session' && state.authenticated) lockSession('登录已过期，请重新登录。');
       if (response.status === 204) return null;
       let body;
       try { body = await response.json(); }
@@ -253,10 +255,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function schedulePoll() {
     clearTimeout(state.pollTimer);
-    if (!document.hidden) state.pollTimer = setTimeout(() => refreshOverview({ quiet: true }), 5000);
+    if (state.authenticated && !document.hidden) state.pollTimer = setTimeout(() => refreshOverview({ quiet: true }), 5000);
   }
 
   function refreshOverview({ quiet = false, force = false } = {}) {
+    if (!state.authenticated) return Promise.resolve();
     if (state.overviewPromise && !force) return state.overviewPromise;
     if (force && state.overviewController) state.overviewController.abort();
     const version = ++state.overviewVersion;
@@ -1589,6 +1592,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function route() {
+    if (!state.authenticated) return;
     const requested = window.location.hash.slice(1) || 'overview';
     const next = Object.hasOwn(titles, requested) ? requested : 'overview';
     if (requested !== next) history.replaceState(null, '', `#${next}`);
@@ -1719,7 +1723,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.addEventListener('visibilitychange', () => {
     clearTimeout(state.pollTimer);
-    if (!document.hidden) refreshOverview({ quiet: true, force: true });
+    if (state.authenticated && !document.hidden) refreshOverview({ quiet: true, force: true });
   });
   window.addEventListener('hashchange', route);
   window.addEventListener('pagehide', () => {
@@ -1735,6 +1739,77 @@ document.addEventListener('DOMContentLoaded', () => {
   setupSchedule('settings');
   setupSchedule('task');
   setupNavigation();
-  route();
-  refreshOverview();
+  function lockSession(message = '') {
+    state.authenticated = false;
+    state.overview = null;
+    state.route = '';
+    ++state.overviewVersion;
+    clearTimeout(state.pollTimer);
+    for (const controller of [state.overviewController, state.previewController, state.search.controller, state.rankings.controller, state.audio.controller, state.cloud.controller]) if (controller) controller.abort();
+    state.overviewPromise = null;
+    cancelCloudLogin();
+    document.querySelectorAll('dialog[open]').forEach((dialog) => dialog.close());
+    show('app-shell', false);
+    $('toast-region').replaceChildren();
+    show('console-skip-link', false);
+    show('login-view', true);
+    document.title = '登录 · Meloport';
+    text('login-status', '');
+    text('login-error', message);
+    show('login-error', Boolean(message));
+    $('login-password').value = '';
+  }
+
+  function unlockSession() {
+    $('login-fields').disabled = false;
+    state.authenticated = true;
+    show('login-view', false);
+    show('app-shell', true);
+    show('console-skip-link', true);
+    route();
+    refreshOverview({ force: true });
+  }
+
+  async function checkSession() {
+    $('login-fields').disabled = true;
+    text('login-status', '正在检查登录状态…');
+    show('login-retry', false);
+    try {
+      const session = await request('/api/session', { timeout: 15000 });
+      if (session.authenticated) { unlockSession(); return; }
+      lockSession();
+      show('login-setup', !session.configured);
+      $('login-fields').disabled = !session.configured;
+      text('login-status', session.configured ? '' : '管理员密码尚未配置。');
+      show('login-retry', !session.configured);
+    } catch (error) {
+      lockSession(error.message);
+      text('login-status', '无法检查登录状态。');
+      show('login-retry', true);
+    }
+  }
+
+  $('login-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!$('login-password').value) { text('login-error', '请输入密码。'); show('login-error', true); $('login-password').focus(); return; }
+    await busyButton($('login-submit'), '正在登录', async () => {
+      show('login-error', false);
+      try {
+        await request('/api/session', { method: 'POST', body: { username: $('login-username').value, password: $('login-password').value } });
+        $('login-password').value = '';
+        unlockSession();
+      } catch (error) {
+        text('login-error', error.message); show('login-error', true);
+        $('login-password').value = ''; $('login-password').focus();
+      }
+    });
+  });
+  $('login-retry').addEventListener('click', checkSession);
+  $('logout-button').addEventListener('click', async () => {
+    await busyButton($('logout-button'), '正在退出', async () => {
+      try { await request('/api/session', { method: 'DELETE' }); lockSession(); $('login-password').focus(); }
+      catch (error) { toast(error.message, true); }
+    });
+  });
+  checkSession();
 }, { once: true });

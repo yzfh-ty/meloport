@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -171,6 +172,9 @@ func serve(parent context.Context, cfg *config.Config, tasks []config.Task, engi
 	if options.Audio == nil {
 		options.Audio, _ = engine.(audioLibrary)
 	}
+	// Always enforce login on a running management listener, including when the
+	// password has not been configured. Static assets expose only the login shell.
+	options.Auth = newManagementAuth(os.Getenv("MELOPORT_ADMIN_PASSWORD"))
 	if err := webui.ValidateDirectory(options.WebDir); err != nil {
 		return err
 	}

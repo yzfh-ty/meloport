@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -581,6 +582,7 @@ func TestWebRunningTaskCannotBeEditedOrDeleted(t *testing.T) {
 }
 
 func TestWebServeFromZeroTasksAcceptsRuntimeTaskAndReleasesPort(t *testing.T) {
+	t.Setenv("MELOPORT_ADMIN_PASSWORD", adminTestPassword)
 	f := newWebFixture(t)
 	f.control.stop()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -606,7 +608,8 @@ func TestWebServeFromZeroTasksAcceptsRuntimeTaskAndReleasesPort(t *testing.T) {
 	waitServiceEvent(t, events.ready)
 	transport := &http.Transport{Proxy: nil}
 	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, Timeout: 3 * time.Second}
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Transport: transport, Timeout: 3 * time.Second, Jar: jar}
 	request := func(method, path string, body any) int {
 		encoded, err := json.Marshal(body)
 		if err != nil {
@@ -635,6 +638,9 @@ func TestWebServeFromZeroTasksAcceptsRuntimeTaskAndReleasesPort(t *testing.T) {
 			t.Fatalf("live Web request failed: HTTP%d %s", response.StatusCode, content)
 		}
 		return response.StatusCode
+	}
+	if request("POST", "/api/session", map[string]string{"username": "admin", "password": adminTestPassword}) != 200 {
+		t.Fatal("administrator login failed")
 	}
 	if request("POST", "/api/tasks", webTask("runtime", "qq")) != 201 {
 		t.Fatal("runtime create failed")

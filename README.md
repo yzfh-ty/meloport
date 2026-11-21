@@ -10,10 +10,15 @@ Meloport 按计划同步网易云、QQ 音乐和酷狗的歌单或排行榜，�
 
 ```powershell
 .\scripts\dev.ps1 -Action build
+$adminPassword = Read-Host '设置控制台管理员密码（至少 12 字节）' -AsSecureString
+$env:MELOPORT_ADMIN_PASSWORD = [System.Net.NetworkCredential]::new('', $adminPassword).Password
+Remove-Variable adminPassword
 .\bin\meloport.exe serve -config config.yaml
 ```
 
 打开 [本地控制台](http://127.0.0.1:8080/)。首次运行会在缺少 `config.yaml` 时创建空任务配置。已有配置会继续使用。修改管理端口时，以启动日志为准。按 `Ctrl+C` 停止服务。
+
+使用固定账号 `admin` 和上面设置的密码登录。只提供一个管理员账号；没有注册或用户管理。未设置有效的 `MELOPORT_ADMIN_PASSWORD` 时，控制台保持锁定。密码只从启动进程环境读取，不写入 YAML 或数据库。登录有效期为 12 小时，可在页面底部退出；服务重启后重新登录。Linux/WSL 配置方式和会话说明见 [控制台登录](docs/login.md)。
 
 ## 添加订阅和下载
 

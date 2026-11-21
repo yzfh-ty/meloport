@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="/assets/app.css" />
   </head>
   <body>
-    <a class="skip-link" href="#main-content">跳到主要内容</a>
+    <a id="console-skip-link" class="skip-link" href="#main-content" hidden>跳到主要内容</a>
     <svg
       class="icon-library"
       aria-hidden="true"
@@ -118,7 +118,30 @@
       </symbol>
     </svg>
 
-    <div class="app-shell">
+    <section id="login-view" class="login-view" aria-labelledby="login-title">
+      <main class="login-panel">
+        <div class="brand" aria-label="Meloport">
+          <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M5 23V9l7 7 7-7v14M24 7v18" /><circle cx="25" cy="7" r="2" /></svg></span>
+          <span class="brand-name">Meloport</span>
+        </div>
+        <h1 id="login-title">登录控制台</h1>
+        <p class="login-intro">管理你的音乐订阅与同步。</p>
+        <p id="login-status" class="field-hint" role="status">正在检查登录状态…</p>
+        <div id="login-error" class="inline-error" role="alert" hidden></div>
+        <p id="login-setup" class="notice notice-info" hidden>请先在服务环境中设置 <code>MELOPORT_ADMIN_PASSWORD</code>（12–1024 字节），然后重启 Meloport。</p>
+        <form id="login-form" novalidate>
+          <fieldset id="login-fields" disabled>
+            <div class="field"><label for="login-username">账号</label><input id="login-username" name="username" value="admin" autocomplete="username" readonly /></div>
+            <div class="field"><label for="login-password">密码</label><input id="login-password" name="password" type="password" autocomplete="current-password" required maxlength="1024" aria-describedby="login-error" /></div>
+            <button id="login-submit" class="button button-primary" type="submit">登录</button>
+          </fieldset>
+        </form>
+        <button id="login-retry" class="button button-secondary" type="button" hidden>重新检查</button>
+        <noscript><p>请启用 JavaScript 后登录控制台。</p></noscript>
+      </main>
+    </section>
+
+    <div id="app-shell" class="app-shell" hidden>
       <div class="sidebar-slot">
         <aside class="sidebar" id="sidebar">
           <div class="sidebar-head">
@@ -1054,7 +1077,7 @@
           </section>
         </main>
         <footer class="workspace-footer">
-          <span>Meloport</span><span>本地管理</span>
+          <span>Meloport · 本地管理</span><button id="logout-button" class="button button-secondary button-small" type="button">退出登录</button>
         </footer>
       </div>
     </div>
