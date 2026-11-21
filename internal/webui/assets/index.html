@@ -148,6 +148,10 @@
               <span class="nav-label">任务概览</span>
               <span id="nav-task-count" class="nav-count" aria-hidden="true">—</span>
             </a>
+            <a href="#audio" data-nav="audio" aria-label="音频文件" title="音频文件">
+              <svg class="icon" aria-hidden="true"><use href="#icon-music" /></svg>
+              <span class="nav-label">音频文件</span>
+            </a>
             <a href="#search" data-nav="search" aria-label="歌曲检索" title="歌曲检索">
               <svg class="icon" aria-hidden="true"><use href="#icon-search" /></svg>
               <span class="nav-label">歌曲检索</span>
@@ -578,6 +582,95 @@
                 <tbody id="rankings-body"></tbody>
               </table>
               <div class="panel-footer"><span id="rankings-summary">—</span><span id="rankings-fetched-at">—</span></div>
+            </section>
+          </section>
+
+          <section id="view-audio" data-view="audio" aria-labelledby="audio-title" hidden>
+            <div class="page-heading">
+              <div class="page-title-row">
+                <button
+                  id="mobile-menu-audio"
+                  class="icon-button mobile-menu-button"
+                  type="button"
+                  aria-label="打开导航"
+                  title="打开导航"
+                  aria-controls="navigation-drawer"
+                  aria-expanded="false"
+                >
+                  <svg class="icon" aria-hidden="true"><use href="#icon-menu" /></svg>
+                </button>
+                <h1 id="audio-title" tabindex="-1">音频文件</h1>
+              </div>
+              <button id="audio-refresh" class="button button-secondary" type="button">
+                <svg class="icon" aria-hidden="true"><use href="#icon-refresh" /></svg>
+                刷新列表
+              </button>
+            </div>
+            <section class="panel audio-panel" aria-label="已登记的音频文件">
+              <form id="audio-filters" class="audio-filters" role="search" aria-label="筛选音频文件">
+                <div class="field audio-keyword">
+                  <label for="audio-query">关键词</label>
+                  <input id="audio-query" name="q" type="search" maxlength="100" placeholder="歌曲、歌手、专辑或路径" autocomplete="off" />
+                </div>
+                <div class="field">
+                  <label for="audio-task">订阅任务</label>
+                  <select id="audio-task" name="task"><option value="">全部任务</option></select>
+                </div>
+                <div class="field">
+                  <label for="audio-platform">音乐平台</label>
+                  <select id="audio-platform" name="platform">
+                    <option value="">全部平台</option>
+                    <option value="netease">网易云音乐</option>
+                    <option value="qq">QQ 音乐</option>
+                    <option value="kugou">酷狗音乐</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="audio-missing">元数据</label>
+                  <select id="audio-missing" name="missing">
+                    <option value="">全部</option>
+                    <option value="any">有缺失项</option>
+                    <option value="title">缺少歌名</option>
+                    <option value="artist">缺少歌手</option>
+                    <option value="album">缺少专辑</option>
+                    <option value="cover">缺少封面</option>
+                    <option value="lyrics">缺少歌词</option>
+                    <option value="none">元数据齐全</option>
+                  </select>
+                </div>
+                <button id="audio-filter-submit" class="button button-primary" type="submit">
+                  <svg class="icon" aria-hidden="true"><use href="#icon-search" /></svg>
+                  筛选
+                </button>
+              </form>
+              <div id="audio-repair-result" class="notice notice-info audio-repair-result" role="status" hidden></div>
+              <div id="audio-error" class="inline-error" role="alert" hidden></div>
+              <div id="audio-loading" class="loading-state" role="status" hidden>
+                <span class="spinner" aria-hidden="true"></span>正在检查音频文件…
+              </div>
+              <div id="audio-empty" class="empty-state" hidden>
+                <div class="empty-icon"><svg class="icon" aria-hidden="true"><use href="#icon-music" /></svg></div>
+                <h3 id="audio-empty-title"></h3>
+                <p id="audio-empty-detail"></p>
+              </div>
+              <table id="audio-table" class="data-table audio-table" hidden>
+                <thead>
+                  <tr>
+                    <th scope="col">音频文件</th>
+                    <th scope="col">来源</th>
+                    <th scope="col">文件内元数据</th>
+                    <th scope="col" class="actions-heading">操作</th>
+                  </tr>
+                </thead>
+                <tbody id="audio-body"></tbody>
+              </table>
+              <div id="audio-pagination" class="panel-footer pagination" aria-label="音频列表分页" hidden>
+                <span id="audio-page-label"></span>
+                <div>
+                  <button id="audio-prev" class="button button-small button-secondary" type="button">上一页</button>
+                  <button id="audio-next" class="button button-small button-secondary" type="button">下一页</button>
+                </div>
+              </div>
             </section>
           </section>
 

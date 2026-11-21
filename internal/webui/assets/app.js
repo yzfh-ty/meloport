@@ -96,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const $ = (id) => document.getElementById(id);
   const platforms = { netease: '网易云音乐', qq: 'QQ 音乐', kugou: '酷狗音乐' };
-  const titles = { overview: '任务概览', search: '歌曲检索', rankings: '排行榜', history: '运行记录', settings: '系统设置' };
+  const titles = { overview: '任务概览', audio: '音频文件', search: '歌曲检索', rankings: '排行榜', history: '运行记录', settings: '系统设置' };
   const qualities = {
     netease: [['lossless', '无损 · lossless'], ['hires', 'Hi-Res · hires'], ['exhigh', '高品质 · exhigh'], ['standard', '标准 · standard'], ['jymaster', '母带 · jymaster'], ['jyeffect', '沉浸环绕 · jyeffect'], ['sky', '沉浸声 · sky']],
     qq: [['flac', '无损 · flac'], ['hires', 'Hi-Res · hires'], ['320k', '320 kbps · 320k'], ['128k', '128 kbps · 128k'], ['master', '母带 · master']],
@@ -107,6 +107,12 @@ document.addEventListener('DOMContentLoaded', () => {
     running: ['正在同步', 'running'], canceled: ['已取消', 'neutral'], interrupted: ['运行中断', 'warning'],
     queued: ['等待执行', 'running'], disabled: ['已停用', 'neutral']
   };
+  const audioFields = { title: '歌名', artist: '歌手', album: '专辑', cover: '封面', lyrics: '歌词' };
+  const audioStatus = {
+    ready: ['元数据齐全', 'success'], incomplete: ['有缺失项', 'warning'],
+    missing: ['找不到文件', 'error'], changed: ['文件已改动', 'warning'], outside: ['位于旧目录', 'neutral'],
+    unsupported: ['格式不支持', 'neutral'], unreadable: ['无法读取标签', 'error'], archived: ['任务已删除', 'neutral']
+  };
   const state = {
     overview: null, route: '', editTask: null, deleteTask: null,
     taskSignature: '', historySignature: '', historyOptionsSignature: '', settingsDirty: false,
@@ -114,6 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
     previewController: null, rankingDetail: null, pollTimer: null, toastTimer: null, dialogTriggers: new Map(),
     search: { keyword: '', platform: 'netease', offset: 0, limit: 20, tracks: [], loaded: false, loading: false, controller: null },
     rankings: { platform: 'netease', catalog: {}, loading: false, error: '', filter: '', category: '', controller: null },
+    audio: { filters: {}, offsets: [0], nextOffset: null, items: [], loading: false, error: '', controller: null, repairing: null },
     schedules: {}
   };
 
@@ -902,6 +909,164 @@ document.addEventListener('DOMContentLoaded', () => {
     $('search-results-body').replaceChildren(...rows);
   }
 
+  function audioMissing(item) {
+    return Array.isArray(item.missing) ? item.missing.filter((key) => Object.hasOwn(audioFields, key)).map((key) => audioFields[key]) : [];
+  }
+
+  function audioName(item) {
+    return item.title || String(item.path || '').split(/[\\/]/).pop() || item.track_id;
+  }
+
+  function renderAudio() {
+    const data = state.audio;
+    const resultsVisible = !data.loading && !data.error;
+    show('audio-loading', data.loading);
+    text('audio-error', data.error);
+    show('audio-error', Boolean(data.error));
+    show('audio-table', resultsVisible && data.items.length > 0);
+    show('audio-empty', resultsVisible && data.items.length === 0);
+    show('audio-pagination', resultsVisible && (data.items.length > 0 || data.offsets.length > 1 || data.nextOffset !== null));
+    $('audio-prev').disabled = data.loading || data.offsets.length === 1;
+    $('audio-next').disabled = data.loading || data.nextOffset === null;
+    $('audio-refresh').disabled = data.loading;
+    text('audio-page-label', `第 ${number(data.offsets.length)} 页 · 本页 ${number(data.items.length)} 个文件`);
+
+    const filtered = Object.values(data.filters).some(Boolean);
+    if (resultsVisible && data.items.length === 0) {
+      text('audio-empty-title', filtered ? '没有匹配的文件' : '还没有登记的音频文件');
+      text('audio-empty-detail', data.nextOffset !== null ? '本页未查到匹配项，可以继续查看下一页。' : filtered ? '试试修改筛选条件。' : '歌曲下载完成后会显示在这里。');
+    }
+
+    const rows = data.items.map((item) => {
+      const row = element('tr');
+      const song = cell('音频文件');
+      song.append(element('div', 'cell-title', audioName(item)));
+      const details = [artistNames(item), item.album].filter((value) => value && value !== '—');
+      if (details.length) song.append(element('span', 'cell-subtitle', details.join(' · ')));
+      if (item.path) song.append(element('span', 'cell-subtitle audio-path', item.path));
+
+      const source = cell('来源');
+      source.append(platformBadge(item.provider), element('span', 'cell-subtitle', item.task_id || '—'));
+      if (Number.isFinite(item.size) && item.size > 0) source.append(element('span', 'cell-subtitle', bytes(item.size)));
+
+      const metadata = cell('文件内元数据');
+      const missing = audioMissing(item);
+      if (missing.length) {
+        const badges = element('div', 'audio-missing');
+        badges.append(...missing.map((label) => element('span', 'audio-missing-tag', `缺少${label}`)));
+        metadata.append(badges);
+      } else {
+        const info = Object.hasOwn(audioStatus, item.status) ? audioStatus[item.status] : ['未检查', 'neutral'];
+        metadata.append(element('span', `status-badge status-${info[1]}`, info[0]));
+      }
+
+      const actions = cell('操作');
+      actions.className = 'audio-actions';
+      if (item.retryable) {
+        const key = JSON.stringify([item.task_id, item.provider, item.track_id]);
+        const active = data.repairing === key;
+        const retry = actionButton(active ? '正在补全' : '重试补全', active ? null : 'refresh', 'button button-small button-secondary', (event) => retryAudio(item, key, event.currentTarget));
+        retry.dataset.focusKey = key;
+        retry.setAttribute('aria-label', `重试补全《${audioName(item)}》的元数据`);
+        retry.disabled = data.repairing !== null;
+        if (active) {
+          retry.classList.add('is-loading');
+          retry.setAttribute('aria-busy', 'true');
+        }
+        actions.append(retry);
+      } else {
+        actions.append(element('span', 'audio-no-action', '—'));
+      }
+      row.append(song, source, metadata, actions);
+      return row;
+    });
+    const body = $('audio-body');
+    rememberFocus(body, () => body.replaceChildren(...rows));
+  }
+
+  async function loadAudio(offsets = state.audio.offsets) {
+    const data = state.audio;
+    if (data.controller) data.controller.abort();
+    const controller = new AbortController();
+    data.controller = controller;
+    data.loading = true;
+    data.error = '';
+    const offset = offsets[offsets.length - 1];
+    renderAudio();
+    try {
+      const params = new URLSearchParams({ ...data.filters, offset: String(offset), limit: '30' });
+      const response = await request(`/api/audio?${params}`, { signal: controller.signal, timeout: 30000 });
+      if (controller.signal.aborted) return;
+      if (!response || !Array.isArray(response.items)) throw new Error('服务返回了无法识别的音频文件列表。');
+      data.items = response.items;
+      data.offsets = offsets;
+      data.nextOffset = response.has_more && Number.isSafeInteger(response.next_offset) && response.next_offset > offset ? response.next_offset : null;
+      if (Array.isArray(response.tasks)) {
+        const select = $('audio-task');
+        const selected = select.value;
+        const tasks = [...new Set([...response.tasks, selected].filter(Boolean))];
+        select.replaceChildren(element('option', '', '全部任务'), ...tasks.map((task) => {
+          const option = element('option', '', task);
+          option.value = task;
+          return option;
+        }));
+        select.firstElementChild.value = '';
+        select.value = selected;
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) data.error = error.message;
+    } finally {
+      if (data.controller === controller) {
+        data.controller = null;
+        data.loading = false;
+        renderAudio();
+      }
+    }
+  }
+
+  function showAudioRepair(message, error = false) {
+    const result = $('audio-repair-result');
+    result.classList.toggle('notice-info', !error);
+    result.classList.toggle('notice-error', error);
+    result.textContent = message;
+    result.hidden = !message;
+  }
+
+  async function retryAudio(item, key, button) {
+    const data = state.audio;
+    if (data.repairing !== null) return;
+    data.repairing = key;
+    const restoreFocus = document.activeElement === button;
+    $('audio-body').querySelectorAll('button').forEach((retry) => { retry.disabled = true; });
+    button.classList.add('is-loading');
+    button.setAttribute('aria-busy', 'true');
+    button.textContent = '正在补全';
+    showAudioRepair('');
+    const name = `《${audioName(item)}》`;
+    try {
+      const path = [item.task_id, item.provider, item.track_id].map(encodeURIComponent).join('/');
+      const result = await request(`/api/audio/${path}/retag`, { method: 'POST', timeout: 115000 });
+      if (!result || !result.item) throw new Error('服务没有返回补全结果，请刷新列表查看。');
+      const remaining = audioMissing(result.item);
+      const warnings = Array.isArray(result.warnings) ? result.warnings.filter(Boolean) : [];
+      let message = `${name}的元数据已补齐。`;
+      if (remaining.length) message = `${name}${result.changed ? '已更新，仍缺少' : '未补齐以下项目'}${result.changed ? '' : '：'}${remaining.join('、')}。`;
+      else if (result.item.status !== 'ready') message = `${name}已重试，请查看文件状态。`;
+      if (warnings.length) message += ` ${warnings.join(' · ')}`;
+      showAudioRepair(message);
+      if (state.route === 'audio') await loadAudio();
+    } catch (error) {
+      showAudioRepair(`${name}补全失败。${error.message}`, true);
+    } finally {
+      data.repairing = null;
+      renderAudio();
+      if (restoreFocus && state.route === 'audio' && document.activeElement === document.body) {
+        const replacement = [...$('audio-body').querySelectorAll('button')].find((retry) => retry.dataset.focusKey === key);
+        (replacement || $('audio-query')).focus({ preventScroll: true });
+      }
+    }
+  }
+
   function rankingItems() {
     const data = state.rankings;
     const catalog = data.catalog[data.platform];
@@ -1163,10 +1328,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     if ($('breadcrumb-current')) text('breadcrumb-current', titles[next]);
     document.title = `${titles[next]} · Meloport`;
-    const changed = state.route && next !== state.route;
+    const previous = state.route;
+    const changed = previous && next !== previous;
     state.route = next;
     if (changed) { $(`${next}-title`).focus({ preventScroll: true }); window.scrollTo({ top: 0, behavior: 'instant' }); }
     if (next === 'rankings') loadRankings(state.rankings.platform);
+    if (previous === 'audio' && next !== 'audio' && state.audio.controller) state.audio.controller.abort();
+    if (next === 'audio' && previous !== 'audio') loadAudio();
   }
 
   $('refresh-button').addEventListener('click', async (event) => {
@@ -1187,6 +1355,19 @@ document.addEventListener('DOMContentLoaded', () => {
   $('search-form').addEventListener('submit', (event) => { event.preventDefault(); searchSongs(0, true); });
   $('search-prev').addEventListener('click', () => searchSongs(Math.max(0, state.search.offset - state.search.limit)));
   $('search-next').addEventListener('click', () => searchSongs(state.search.offset + state.search.limit));
+  $('audio-filters').addEventListener('submit', (event) => {
+    event.preventDefault();
+    state.audio.filters = Object.fromEntries([...new FormData(event.currentTarget)].map(([key, value]) => [key, value.trim()]));
+    showAudioRepair('');
+    loadAudio([0]);
+  });
+  $('audio-refresh').addEventListener('click', () => loadAudio());
+  $('audio-prev').addEventListener('click', () => {
+    if (state.audio.offsets.length > 1) loadAudio(state.audio.offsets.slice(0, -1));
+  });
+  $('audio-next').addEventListener('click', () => {
+    if (state.audio.nextOffset !== null) loadAudio([...state.audio.offsets, state.audio.nextOffset]);
+  });
   $('rankings-filter').addEventListener('input', (event) => { state.rankings.filter = event.target.value; renderRankings(); });
   $('rankings-category').addEventListener('change', (event) => { state.rankings.category = event.target.value; renderRankings(); });
   document.querySelectorAll('#rankings-platform [data-platform]').forEach((button) => button.addEventListener('click', () => loadRankings(button.dataset.platform)));
@@ -1240,6 +1421,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (state.previewController) state.previewController.abort();
     if (state.search.controller) state.search.controller.abort();
     if (state.rankings.controller) state.rankings.controller.abort();
+    if (state.audio.controller) state.audio.controller.abort();
   });
   setupSchedule('settings');
   setupSchedule('task');

@@ -783,18 +783,13 @@ func (c *Client) buildPlaylist(ctx context.Context, identity, name string, raw [
 	hashes = missing
 	for begin := 0; begin < len(hashes); begin += 100 {
 		batch := hashes[begin:min(begin+100, len(hashes))]
-		items := make([]any, 0, len(batch))
+		items := make([]map[string]string, 0, len(batch))
 		for _, hash := range batch {
 			items = append(items, map[string]string{"hash": hash})
 		}
-		payload, _ := json.Marshal(map[string]any{"area_code": "1", "show_privilege": 1, "show_album_info": "1", "is_publish": "", "appid": 1005, "clientver": 11451, "mid": "1", "dfid": "-", "clienttime": time.Now().UnixMilli(), "key": androidSigningMaterial, "fields": "album_info,author_name,audio_info,ori_audio_name,base,songname,classification,img,album_img", "data": items})
-		value, err := c.request(ctx, http.MethodPost, "https://gateway.kugou.com", "/v3/album_audio/audio", nil, payload, false, false)
+		rows, err := c.albumAudioRows(ctx, items)
 		if err != nil {
 			return model.Playlist{}, err
-		}
-		rows, ok := value.([]any)
-		if !ok {
-			return model.Playlist{}, errors.New("Kugou song detail response is missing")
 		}
 		index := map[string]model.Track{}
 		for _, row := range rows {

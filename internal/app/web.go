@@ -34,6 +34,7 @@ type serviceOptions struct {
 	WebDir     string
 	Store      *state.Store
 	Metadata   *provider.Manager
+	Audio      audioLibrary
 }
 
 type webController struct {
@@ -46,6 +47,7 @@ type webController struct {
 	queue     *taskQueue
 	store     *state.Store
 	metadata  *provider.Manager
+	audio     audioLibrary
 	editor    *config.Editor
 	logger    *slog.Logger
 	webDir    string
@@ -53,6 +55,8 @@ type webController struct {
 	stopping  bool
 	rankingMu sync.Mutex
 	rankings  map[string]rankingCache
+	// Protected by changes. Keep task and storage edits clear of a running repair.
+	audioActiveTask string
 }
 
 type rankingCache struct {
@@ -61,7 +65,7 @@ type rankingCache struct {
 }
 
 func newWebController(cfg *config.Config, tasks []config.Task, queue *taskQueue, logger *slog.Logger, options serviceOptions) *webController {
-	c := &webController{cfg: cfg, queue: queue, logger: logger, store: options.Store, metadata: options.Metadata, webDir: options.WebDir, tasks: make(map[string]config.Task), entries: make(map[string]cron.EntryID), scheduler: cron.New(cron.WithLocation(cfg.Location)), rankings: make(map[string]rankingCache)}
+	c := &webController{cfg: cfg, queue: queue, logger: logger, store: options.Store, metadata: options.Metadata, audio: options.Audio, webDir: options.WebDir, tasks: make(map[string]config.Task), entries: make(map[string]cron.EntryID), scheduler: cron.New(cron.WithLocation(cfg.Location)), rankings: make(map[string]rankingCache)}
 	if options.ConfigPath != "" {
 		c.editor = config.NewEditor(options.ConfigPath)
 		if absolute, err := filepath.Abs(options.ConfigPath); err == nil {
@@ -187,6 +191,8 @@ func (c *webController) handler(health http.Handler, ready *atomic.Bool) http.Ha
 	mux.HandleFunc("GET /api/search", c.search)
 	mux.HandleFunc("GET /api/rankings", c.rankingsHandler)
 	mux.HandleFunc("GET /api/rankings/{platform}/{id}", c.rankingDetail)
+	mux.HandleFunc("GET /api/audio", c.listAudio)
+	mux.HandleFunc("POST /api/audio/{task}/{platform}/{track}/retag", c.retagAudio)
 	mux.HandleFunc("PUT /api/settings", c.settings)
 	mux.HandleFunc("POST /api/run", c.runAll)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
@@ -206,6 +212,10 @@ func (c *webController) handler(health http.Handler, ready *atomic.Bool) http.Ha
 			}
 			if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
 				webError(w, 403, "cross-site management requests are refused")
+				return
+			}
+			if r.URL.Path == "/api/audio" && r.Header.Get("X-Meloport-Request") != "1" {
+				webError(w, 403, "audio management requests require the Meloport request header")
 				return
 			}
 			if r.URL.Path == "/api/search" || r.URL.Path == "/api/rankings" || strings.HasPrefix(r.URL.Path, "/api/rankings/") || strings.HasSuffix(r.URL.Path, "/playlist") {
@@ -361,7 +371,7 @@ func (c *webController) updateTask(w http.ResponseWriter, r *http.Request) {
 	}
 	c.changes.Lock()
 	defer c.changes.Unlock()
-	if c.queue.isRunning(r.PathValue("id")) {
+	if c.queue.isRunning(r.PathValue("id")) || c.audioActiveTask == r.PathValue("id") {
 		webError(w, 409, "task is running; wait for it to finish before editing")
 		return
 	}
@@ -383,7 +393,7 @@ func (c *webController) deleteTask(w http.ResponseWriter, r *http.Request) {
 	}
 	c.changes.Lock()
 	defer c.changes.Unlock()
-	if c.queue.isRunning(r.PathValue("id")) {
+	if c.queue.isRunning(r.PathValue("id")) || c.audioActiveTask == r.PathValue("id") {
 		webError(w, 409, "task is running; wait for it to finish before removing")
 		return
 	}
@@ -422,8 +432,8 @@ func (c *webController) settings(w http.ResponseWriter, r *http.Request) {
 		if runtime.GOOS == "windows" {
 			sameRoot = strings.EqualFold(filepath.Clean(nextRoot), filepath.Clean(currentRoot))
 		}
-		if !sameRoot && c.queue.anyRunning() {
-			webError(w, http.StatusConflict, "a sync is running; wait for it to finish before changing the download folder")
+		if !sameRoot && (c.queue.anyRunning() || c.audioActiveTask != "") {
+			webError(w, http.StatusConflict, "a sync or repair is running; wait for it to finish before changing the download folder")
 			return
 		}
 	}

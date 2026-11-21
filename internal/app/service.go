@@ -162,6 +162,9 @@ func serve(parent context.Context, cfg *config.Config, tasks []config.Task, engi
 	if len(settings) > 0 {
 		options = settings[0]
 	}
+	if options.Audio == nil {
+		options.Audio, _ = engine.(audioLibrary)
+	}
 	if err := webui.ValidateDirectory(options.WebDir); err != nil {
 		return err
 	}
@@ -182,7 +185,11 @@ func serve(parent context.Context, cfg *config.Config, tasks []config.Task, engi
 			return fmt.Errorf("listen for local web management: %w", err)
 		}
 		healthListener = listener
-		server = &http.Server{Handler: control.handler(healthHandler(ctx, store, &ready), &ready), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 120 * time.Second, IdleTimeout: 30 * time.Second}
+		server = &http.Server{
+			Handler:           control.handler(healthHandler(ctx, store, &ready), &ready),
+			BaseContext:       func(net.Listener) context.Context { return ctx },
+			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 120 * time.Second, IdleTimeout: 30 * time.Second,
+		}
 		go func() { serverErrors <- server.Serve(listener) }()
 		logger.Info("local web server listening", "address", listener.Addr().String())
 	}
