@@ -60,6 +60,9 @@
       <symbol id="icon-download" viewBox="0 0 24 24">
         <path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5" />
       </symbol>
+      <symbol id="icon-cloud" viewBox="0 0 24 24">
+        <path d="M6.5 18a4.5 4.5 0 0 1-.5-9 6 6 0 0 1 11.5 1.5A3.75 3.75 0 0 1 18 18z" />
+      </symbol>
       <symbol id="icon-database" viewBox="0 0 24 24">
         <ellipse cx="12" cy="5" rx="8" ry="3" />
         <path
@@ -151,6 +154,10 @@
             <a href="#audio" data-nav="audio" aria-label="音频文件" title="音频文件">
               <svg class="icon" aria-hidden="true"><use href="#icon-music" /></svg>
               <span class="nav-label">音频文件</span>
+            </a>
+            <a href="#cloud115" data-nav="cloud115" aria-label="115 与 STRM" title="115 与 STRM">
+              <svg class="icon" aria-hidden="true"><use href="#icon-cloud" /></svg>
+              <span class="nav-label">115 与 STRM</span>
             </a>
             <a href="#search" data-nav="search" aria-label="歌曲检索" title="歌曲检索">
               <svg class="icon" aria-hidden="true"><use href="#icon-search" /></svg>
@@ -745,6 +752,124 @@
             </section>
           </section>
 
+          <section id="view-cloud115" data-view="cloud115" aria-labelledby="cloud115-title" hidden>
+            <div class="page-heading">
+              <div class="page-title-row">
+                <button class="icon-button mobile-menu-button" type="button" aria-label="打开导航" title="打开导航" aria-controls="navigation-drawer" aria-expanded="false"><svg class="icon" aria-hidden="true"><use href="#icon-menu" /></svg></button>
+                <h1 id="cloud115-title" tabindex="-1">115 与 STRM</h1>
+              </div>
+              <button id="cloud-refresh" class="button button-secondary" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-refresh" /></svg>刷新状态</button>
+            </div>
+
+            <div id="cloud-error" class="notice notice-error cloud-notice" role="alert" hidden></div>
+            <div id="cloud-restart" class="notice notice-info cloud-notice" role="status" hidden>配置已保存。重启 Meloport 服务后应用新配置。</div>
+            <div id="cloud-loading" class="loading-state" role="status"><span class="spinner"></span>正在读取 115 状态…</div>
+
+            <section class="panel cloud-account" aria-labelledby="cloud-account-title">
+              <div class="panel-heading">
+                <div>
+                  <h2 id="cloud-account-title">115 网盘 <span id="cloud-auth-status" class="status-badge status-neutral">正在读取</span></h2>
+                  <p id="cloud-auth-note">启用 115 后，可用手机端 115 App 扫码授权。</p>
+                </div>
+                <div class="heading-actions cloud-actions">
+                  <a id="cloud-setup-link" class="button button-primary" href="#cloud115" hidden>配置 115 网盘</a>
+                  <button id="cloud-logout" class="button button-secondary" type="button" hidden>退出扫码登录</button>
+                  <button id="cloud-check" class="button button-secondary" type="button" disabled hidden>检查连接</button>
+                  <button id="cloud-login" class="button button-primary" type="button" disabled hidden>扫码登录</button>
+                </div>
+              </div>
+              <p id="cloud-check-result" class="cloud-feedback" role="status" hidden></p>
+            </section>
+
+            <section class="panel cloud-export" aria-labelledby="cloud-export-title">
+              <div class="panel-heading">
+                <div>
+                  <h2 id="cloud-export-title">STRM 导出</h2>
+                  <p>核对 CD2 已上传的音频，生成或修复对应的 STRM 文件。</p>
+                </div>
+                <button id="cloud-reconcile" class="button button-primary" type="button" disabled><svg class="icon" aria-hidden="true"><use href="#icon-refresh" /></svg>核对并生成</button>
+              </div>
+              <dl id="cloud-counts" class="cloud-counts" aria-label="导出统计" hidden>
+                <div><dt>待远端确认</dt><dd id="cloud-pending">—</dd></div>
+                <div><dt>已确认音频</dt><dd id="cloud-confirmed">—</dd></div>
+                <div><dt>已生成 STRM</dt><dd id="cloud-exported">—</dd></div>
+              </dl>
+              <p id="cloud-reconcile-result" class="cloud-feedback" role="status" hidden></p>
+              <div id="cloud-empty" class="empty-state compact" hidden>
+                <h3 id="cloud-empty-title">暂无导出记录</h3>
+                <p id="cloud-empty-description">运行订阅任务后，等待 CD2 上传音频到 115。</p>
+              </div>
+              <table id="cloud-table" class="data-table cloud-table" hidden>
+                <thead><tr><th scope="col">音频</th><th scope="col">任务</th><th scope="col">导出状态</th></tr></thead>
+                <tbody id="cloud-files"></tbody>
+              </table>
+              <div id="cloud-pagination" class="cloud-pagination" hidden>
+                <p id="cloud-file-count" class="field-hint" role="status"></p>
+                <div class="heading-actions">
+                  <button id="cloud-prev" class="button button-secondary button-small" type="button" disabled>上一页</button>
+                  <button id="cloud-next" class="button button-secondary button-small" type="button" disabled>下一页</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel" aria-labelledby="cloud-settings-title">
+              <div class="panel-heading"><div><h2 id="cloud-settings-title" tabindex="-1">网盘与导出设置</h2><p>CD2 负责上传。Meloport 核对 115 上的音频后写入独立的 STRM 目录。</p></div></div>
+              <form id="cloud-settings" class="padded-form cloud-form" novalidate>
+                <fieldset id="cloud-fields" disabled>
+                  <label class="checkbox-field cloud-enable" for="cloud-enabled">
+                    <input type="checkbox" id="cloud-enabled" name="enabled" />
+                    <span><strong>启用 115 网盘交接与 STRM</strong><small>适用于此实例的所有订阅任务。</small></span>
+                  </label>
+                  <div class="field">
+                    <label for="cloud-target-cid">115 目标目录 ID</label>
+                    <input id="cloud-target-cid" name="target_cid" type="text" inputmode="numeric" maxlength="20" pattern="[1-9][0-9]{0,19}" placeholder="例如 123456789" aria-describedby="cloud-target-hint" />
+                    <p id="cloud-target-hint" class="field-hint">在 115 中打开专用目录，填写地址中的 CID。CD2 应上传到同一目录并保留任务子目录。</p>
+                  </div>
+                  <div class="form-grid">
+                    <div class="field">
+                      <label for="cloud-staging-dir">CD2 暂存目录</label>
+                      <input id="cloud-staging-dir" name="staging_dir" type="text" maxlength="4096" placeholder="data/115-staging" />
+                      <p class="field-hint">设为 CD2 的上传监控目录，与本地音乐目录使用同一文件系统。</p>
+                    </div>
+                    <div class="field">
+                      <label for="cloud-strm-dir">STRM 导出目录</label>
+                      <input id="cloud-strm-dir" name="strm_dir" type="text" maxlength="4096" placeholder="data/strm" />
+                      <p class="field-hint">使用独立目录。相对路径以配置文件所在目录为准。</p>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label for="cloud-media-base-url">播放器访问地址</label>
+                    <input id="cloud-media-base-url" name="media_base_url" type="url" maxlength="2048" placeholder="http://127.0.0.1:8081" aria-describedby="cloud-media-hint" />
+                    <p id="cloud-media-hint" class="field-hint">STRM 会写入此地址。跨设备播放请填写播放器能访问的 HTTPS 地址。</p>
+                  </div>
+                  <details class="advanced-fields cloud-advanced">
+                    <summary>Navidrome 接入 <span id="cloud-navidrome-status">可选</span></summary>
+                    <p class="field-hint">让 Navidrome 扫描 CD2 挂载的真实音频。使用 Meloport 直连播放时，在对应播放器启用 Report Real Path，并关闭服务端转码和限码率。</p>
+                    <div class="form-grid">
+                      <div class="field"><label for="cloud-navidrome-url">Navidrome 服务地址</label><input id="cloud-navidrome-url" name="navidrome_url" type="url" maxlength="2048" placeholder="http://127.0.0.1:4533" /></div>
+                      <div class="field"><label for="cloud-navidrome-mount-root">Navidrome 中的挂载路径</label><input id="cloud-navidrome-mount-root" name="navidrome_mount_root" type="text" maxlength="4096" placeholder="/music/115" /></div>
+                    </div>
+                  </details>
+                  <details class="advanced-fields cloud-advanced">
+                    <summary>高级设置 <span>授权与监听</span></summary>
+                    <div class="form-grid">
+                      <div class="field"><label for="cloud-client-id">115 应用 ID</label><input id="cloud-client-id" name="client_id" type="text" inputmode="numeric" maxlength="20" pattern="[0-9]{1,20}" placeholder="100197303" /></div>
+                      <div class="field"><label for="cloud-access-token-env">令牌环境变量名</label><input id="cloud-access-token-env" name="access_token_env" type="text" maxlength="128" placeholder="MELOPORT_115_ACCESS_TOKEN" /></div>
+                      <div class="field"><label for="cloud-media-listen">媒体监听地址</label><input id="cloud-media-listen" name="media_listen" type="text" maxlength="255" placeholder="127.0.0.1:8081" /></div>
+                      <div class="field"><label for="cloud-poll-interval">自动核对间隔</label><input id="cloud-poll-interval" name="poll_interval" type="text" maxlength="30" placeholder="1m" /></div>
+                      <div class="field"><label for="cloud-timeout">115 请求超时</label><input id="cloud-timeout" name="timeout" type="text" maxlength="30" placeholder="15s" /></div>
+                    </div>
+                  </details>
+                </fieldset>
+                <div id="cloud-settings-error" class="form-error-summary" tabindex="-1" role="alert" hidden></div>
+                <div class="form-footer">
+                  <p id="cloud-settings-note" class="field-hint">设置保存后，在下次启动时生效。</p>
+                  <button id="cloud-save" class="button button-primary" type="submit" disabled>保存设置</button>
+                </div>
+              </form>
+            </section>
+          </section>
+
           <section
             id="view-settings"
             data-view="settings"
@@ -1187,6 +1312,23 @@
         ><button id="delete-confirm" class="button button-danger" type="button">
           删除任务
         </button>
+      </div>
+    </dialog>
+
+    <dialog id="cloud-login-dialog" class="modal modal-small" aria-labelledby="cloud-login-title">
+      <div class="modal-header">
+        <h2 id="cloud-login-title">115 网盘扫码登录</h2>
+        <button class="icon-button" type="button" data-close="cloud-login-dialog" aria-label="关闭登录"><svg class="icon" aria-hidden="true"><use href="#icon-close" /></svg></button>
+      </div>
+      <div class="modal-body cloud-login-body">
+        <p>打开手机端 115 App，扫描二维码并在手机上确认授权。</p>
+        <div id="cloud-qr-frame" class="cloud-qr-frame"><div id="cloud-qr" hidden></div><span id="cloud-qr-loading" class="spinner" aria-hidden="true"></span></div>
+        <p id="cloud-login-status" class="cloud-login-status" role="status">正在获取二维码…</p>
+        <p class="field-hint">授权令牌保存在 Meloport 进程内；过期或服务重启后需重新扫码授权。</p>
+      </div>
+      <div class="modal-footer">
+        <button class="button button-secondary" type="button" data-close="cloud-login-dialog">关闭</button>
+        <button id="cloud-login-retry" class="button button-primary" type="button" hidden>重新获取二维码</button>
       </div>
     </dialog>
 

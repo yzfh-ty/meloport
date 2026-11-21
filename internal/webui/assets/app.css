@@ -306,6 +306,69 @@ fieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
 .checkbox-field strong { display: block; font-size: .875rem; font-weight: 650; }
 .checkbox-field small { display: block; margin-top: 3px; color: var(--muted); font-size: .8125rem; }
 .form-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; padding-top: 17px; border-top: 1px solid var(--line); }
+
+/* 115 authorization and STRM export */
+.cloud-notice, #cloud-loading { margin-bottom: 16px; }
+.cloud-account .panel-heading, .cloud-export .panel-heading { flex-wrap: wrap; }
+.cloud-account .panel-heading > div:first-child, .cloud-export .panel-heading > div:first-child { flex: 1 1 18rem; }
+.cloud-account .panel-heading h2 { flex-wrap: wrap; }
+.cloud-actions { align-items: center; }
+.cloud-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  padding: 4px var(--panel-pad) 18px;
+  margin: 0;
+}
+.cloud-counts dt { color: var(--muted); font-size: .875rem; }
+.cloud-counts dd { margin: 3px 0 0; font-size: 1.5rem; font-weight: 740; font-variant-numeric: tabular-nums; }
+.cloud-feedback { padding: 0 var(--panel-pad) 16px; color: var(--muted); font-size: .875rem; }
+.cloud-export .empty-state { border-top: 1px solid var(--line); }
+.cloud-export .cloud-empty-setup { min-height: 0; padding: 14px var(--panel-pad); text-align: left; }
+.cloud-export .cloud-empty-setup h3 { display: none; }
+.cloud-export .cloud-empty-setup p { color: var(--muted); }
+.cloud-table { table-layout: fixed; }
+.cloud-table th:nth-child(2) { width: 24%; }
+.cloud-table th:last-child { width: 132px; }
+.cloud-file-path { margin-top: 4px; }
+.cloud-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px var(--panel-pad);
+  border-top: 1px solid var(--line);
+}
+.cloud-form { padding-top: 0; }
+.cloud-enable { margin-bottom: 16px; }
+.cloud-advanced { margin-top: 14px; }
+.cloud-advanced > .field-hint { margin: 0 0 12px; }
+.cloud-form .form-error-summary { margin-top: 16px; }
+.cloud-login-body { display: grid; justify-items: center; gap: 14px; text-align: center; }
+.cloud-login-body > p { max-width: 28rem; }
+.cloud-qr-frame {
+  display: grid;
+  width: min(224px, 100%);
+  aspect-ratio: 1;
+  place-items: center;
+  overflow: hidden;
+  color: var(--muted);
+  background: var(--surface-soft);
+  border-radius: var(--radius);
+}
+.cloud-qr-frame img { display: block; width: 100%; height: auto; }
+.cloud-login-status { color: var(--ink); font-weight: 650; }
+.cloud-login-status.is-error { color: var(--danger); }
+
+@media (max-width: 560px) {
+  .cloud-counts { gap: 8px; }
+  .cloud-counts dt { font-size: .8125rem; }
+  .cloud-table th:nth-child(2), .cloud-table td:nth-child(2) { display: none; }
+  .cloud-table th:last-child { width: 102px; }
+  .cloud-table .cloud-file-task { display: block; }
+}
+.cloud-file-task { display: none; }
 .key-symbol { width: 36px; height: 36px; margin-bottom: 10px; }
 .key-panel h2 { margin-bottom: 8px; }
 .key-panel > p { margin-top: 12px; color: var(--muted); font-size: .875rem; }

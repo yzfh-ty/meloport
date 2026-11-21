@@ -30,9 +30,11 @@ download:
 server:
   listen: "127.0.0.1:8080" # Local Web management and health checks. Set "" to disable.
 
-# Optional CD2 handoff, 115 verification and playback. Restart after changes here.
+# Optional CD2 handoff, 115 verification and playback. Also editable under 115 与 STRM in the Web UI.
+# Restart after changes; Web QR login is held in process memory.
 cloud115:
   enabled: false
+  client_id: "100197303"
   access_token_env: MELOPORT_115_ACCESS_TOKEN
   # target_cid: "123456" # Dedicated non-root 115 directory that CD2 uploads into.
   staging_dir: data/115-staging # CD2 watches this tree. Same filesystem as task directories.

@@ -168,9 +168,12 @@ YAML 内部继续使用五字段 cron“分钟 小时 日 月 星期”，不含
 
 ## 115 网盘、CD2 与 STRM
 
-在 `config.yaml` 中启用 `cloud115`，填写专用的 115 目标目录 `target_cid`。把 `staging_dir` 设为 CD2 单向上传的监控目录，并把该目录的**内容**上传到目标 `cid`，保留任务子目录（远端布局为 `<target_cid>/<任务ID>/<音频文件>`）。在 CD2 中配置确认上传成功后再清理源文件。`storage.music_dir` 和各任务的工作目录需要与 `staging_dir` 位于同一个文件系统，`strm_dir` 使用单独的目录。完整音频会原子移入暂存目录，然后交给 CD2。
+1. 在 Meloport Web 控制台打开「115 与 STRM」，选择「配置 115 网盘」。填写专用的 115 目标目录 CID，确认 CD2 暂存目录、STRM 导出目录和播放器访问地址，启用功能并保存，然后重启 Meloport。也可直接填写 `config.yaml` 的 `cloud115` 节。
+2. 在本页点击「扫码登录」，用手机端 115 App 扫码确认，再点击「检查连接」。应用 ID 可在高级设置中修改。扫码取得的短期 Access Token 只保存在当前进程内，不保存 Refresh Token；令牌过期或服务重启后需要重新扫码，或使用下面的环境变量授权方式。
+3. 把 `staging_dir` 设为 CD2 单向上传的监控目录，并把该目录的**内容**上传到目标 CID，保留任务子目录（远端布局为 `<target_cid>/<任务ID>/<音频文件>`）。在 CD2 中配置确认上传成功后再清理源文件。`storage.music_dir` 和各任务的工作目录需要与 `staging_dir` 位于同一个文件系统，`strm_dir` 使用单独的目录。完整音频会原子移入暂存目录，然后交给 CD2。
+4. 运行订阅任务，等待 CD2 上传。Meloport 会定时核对，也可点击「核对并生成」。本页显示待确认、已确认、已生成三项统计和每条文件的导出状态。删除或改坏的 STRM 可再次核对修复。
 
-使用 [OpenList 官方授权页](https://api.oplist.org/115cloud/requests?driver_txt=115cloud_go&server_use=true) 的 115 网盘验证登录取得 Meloport 专用的短期 Access Token，把它放进启动进程的 `MELOPORT_115_ACCESS_TOKEN` 环境变量（可改 `access_token_env`）。令牌失效时重新授权并重启进程。`cloud-check` 验证令牌和目录访问。加 `-downurl` 可检查一个已完成文件的直链解析，终端只显示结果。
+如需从命令行运行，使用 [OpenList 官方授权页](https://api.oplist.org/115cloud/requests?driver_txt=115cloud_go&server_use=true) 的 115 网盘验证登录取得 Meloport 专用的短期 Access Token，把它放进启动进程的 `MELOPORT_115_ACCESS_TOKEN` 环境变量（可改 `access_token_env`）。令牌失效时重新授权并重启进程。`cloud-check` 验证令牌和目录访问。加 `-downurl` 可检查一个已完成文件的直链解析，终端只显示结果。
 
 ```powershell
 .\bin\meloport.exe cloud-check -config config.yaml

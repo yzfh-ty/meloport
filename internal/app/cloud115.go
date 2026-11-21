@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"meloport/internal/cloud115"
@@ -19,17 +20,97 @@ import (
 type cloudRuntime struct {
 	sync    *cloudsync.Service
 	handler http.Handler
+	drive   *cloudDrive
+	login   *cloudLogin
 }
 
 func newCloudRuntime(cfg config.Cloud115, client *cloud115.Client, store *state.Store) *cloudRuntime {
-	service := cloudsync.New(store, client, cloudsync.Options{
+	drive := &cloudDrive{}
+	if client != nil {
+		drive.environment = client
+	}
+	service := cloudsync.New(store, drive, cloudsync.Options{
 		TargetCID: cfg.TargetCID, StagingDir: cfg.StagingDir, STRMDir: cfg.STRMDir, MediaBaseURL: cfg.MediaBaseURL,
 	})
-	runtime := &cloudRuntime{sync: service}
-	if client != nil {
-		runtime.handler = media.New(cloudLookup{store, cfg.TargetCID}, client, cfg.NavidromeURL, cfg.NavidromeMountRoot)
+	return &cloudRuntime{
+		sync: service, drive: drive,
+		handler: media.New(cloudLookup{store, cfg.TargetCID}, drive, cfg.NavidromeURL, cfg.NavidromeMountRoot),
+		login: &cloudLogin{
+			auth:   cloud115.NewAuthClient(cfg.Timeout.Duration),
+			client: func(token string) (cloudDriveClient, error) { return cloud115.New(token, cfg.Timeout.Duration) },
+		},
 	}
-	return runtime
+}
+
+var errCloudLoginRequired = errors.New("sign in to 115 in Meloport or set the configured access token environment variable")
+
+type cloudDriveClient interface {
+	UserInfo(context.Context) (cloud115.User, error)
+	List(context.Context, string) ([]cloud115.File, error)
+	DownURL(context.Context, string, string) (string, error)
+}
+
+type cloudAccountView struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type cloudDrive struct {
+	mu          sync.Mutex
+	environment cloudDriveClient
+	session     cloudDriveClient
+	expires     time.Time
+	account     *cloudAccountView
+}
+
+func (d *cloudDrive) current() (cloudDriveClient, bool, *cloudAccountView) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.session != nil && time.Now().Before(d.expires) {
+		return d.session, true, d.account
+	}
+	d.session, d.account = nil, nil
+	return d.environment, false, nil
+}
+
+func (d *cloudDrive) setSession(client cloudDriveClient, expires time.Time, account *cloudAccountView) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.session, d.expires, d.account = client, expires, account
+}
+
+func (d *cloudDrive) List(ctx context.Context, cid string) ([]cloud115.File, error) {
+	client, _, _ := d.current()
+	if client == nil {
+		return nil, errCloudLoginRequired
+	}
+	return client.List(ctx, cid)
+}
+
+func (d *cloudDrive) DownURL(ctx context.Context, pickCode, userAgent string) (string, error) {
+	client, _, _ := d.current()
+	if client == nil {
+		return "", errCloudLoginRequired
+	}
+	return client.DownURL(ctx, pickCode, userAgent)
+}
+
+func (c *cloudRuntime) Ready(ctx context.Context, taskID, provider, trackID string) (bool, error) {
+	ready, err := c.sync.Ready(ctx, taskID, provider, trackID)
+	if err != nil || ready {
+		return ready, err
+	}
+	if client, _, _ := c.drive.current(); client == nil {
+		return false, errCloudLoginRequired
+	}
+	return false, nil
+}
+
+func (c *cloudRuntime) Stage(ctx context.Context, item state.Download) (bool, error) {
+	if client, _, _ := c.drive.current(); client == nil {
+		return false, errCloudLoginRequired
+	}
+	return c.sync.Stage(ctx, item)
 }
 
 type cloudLookup struct {
@@ -115,7 +196,7 @@ func checkCloud(ctx context.Context, client *cloud115.Client, cid string, downUR
 
 func (c *cloudRuntime) poll(ctx context.Context, interval time.Duration, logger *slog.Logger) {
 	for ctx.Err() == nil {
-		if err := c.sync.Reconcile(ctx); err != nil && ctx.Err() == nil {
+		if err := c.sync.Reconcile(ctx); err != nil && ctx.Err() == nil && !errors.Is(err, errCloudLoginRequired) {
 			logger.Warn("115 reconciliation failed", "error", err)
 		}
 		timer := time.NewTimer(interval)

@@ -96,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const $ = (id) => document.getElementById(id);
   const platforms = { netease: '网易云音乐', qq: 'QQ 音乐', kugou: '酷狗音乐' };
-  const titles = { overview: '任务概览', audio: '音频文件', search: '歌曲检索', rankings: '排行榜', history: '运行记录', settings: '系统设置' };
+  const titles = { overview: '任务概览', audio: '音频文件', cloud115: '115 与 STRM', search: '歌曲检索', rankings: '排行榜', history: '运行记录', settings: '系统设置' };
   const qualities = {
     netease: [['lossless', '无损 · lossless'], ['hires', 'Hi-Res · hires'], ['exhigh', '高品质 · exhigh'], ['standard', '标准 · standard'], ['jymaster', '母带 · jymaster'], ['jyeffect', '沉浸环绕 · jyeffect'], ['sky', '沉浸声 · sky']],
     qq: [['flac', '无损 · flac'], ['hires', 'Hi-Res · hires'], ['320k', '320 kbps · 320k'], ['128k', '128 kbps · 128k'], ['master', '母带 · master']],
@@ -121,6 +121,7 @@ document.addEventListener('DOMContentLoaded', () => {
     search: { keyword: '', platform: 'netease', offset: 0, limit: 20, tracks: [], loaded: false, loading: false, controller: null },
     rankings: { platform: 'netease', catalog: {}, loading: false, error: '', filter: '', category: '', controller: null },
     audio: { filters: {}, offsets: [0], nextOffset: null, items: [], loading: false, error: '', controller: null, repairing: null },
+    cloud: { data: null, dirty: false, page: 0, controller: null, operation: '', login: null },
     schedules: {}
   };
 
@@ -1317,6 +1318,242 @@ document.addEventListener('DOMContentLoaded', () => {
     updateLayout();
   }
 
+  const cloudPath = '/api/cloud115';
+  const cloudPageSize = 15;
+
+  function renderCloud() {
+    const { data, dirty, operation } = state.cloud;
+    if (!data) return;
+    const active = data.runtime_enabled;
+    const connected = data.session_authenticated || data.token_configured;
+    const controlsReady = active && !operation && !data.restart_required;
+    const connection = data.session_authenticated ? ['已扫码授权', 'success'] : data.token_configured ? ['已配置环境变量授权', 'neutral'] : active ? ['未登录', 'warning'] : ['未启用', 'neutral'];
+    text('cloud-auth-status', connection[0]);
+    $('cloud-auth-status').className = `status-badge status-${connection[1]}`;
+    text('cloud-auth-note', data.account?.name ? `账号：${data.account.name}` : active
+      ? connected ? '可检查账号和目标目录是否可访问。' : '打开手机端 115 App，扫码授权此服务。'
+      : '保存设置并重启服务后，即可扫码登录。');
+    show('cloud-login', active);
+    show('cloud-setup-link', !active && !data.restart_required);
+    show('cloud-logout', data.session_authenticated);
+    show('cloud-check', active && connected);
+    show('cloud-counts', active);
+    show('cloud-restart', data.restart_required);
+    $('cloud-login').disabled = !controlsReady;
+    $('cloud-logout').disabled = Boolean(operation);
+    $('cloud-check').disabled = !controlsReady || !connected;
+    $('cloud-reconcile').disabled = !controlsReady || (!connected && !(data.stats?.confirmed > 0));
+    $('cloud-fields').disabled = operation === 'save';
+    $('cloud-save').disabled = Boolean(operation) || !dirty;
+    $('cloud-target-cid').required = $('cloud-enabled').checked;
+    text('cloud-settings-note', dirty ? '有未保存的更改。' : '设置保存后，在下次启动时生效。');
+    text('cloud-navidrome-status', data.settings.navidrome_url ? '已配置' : '可选');
+    for (const key of ['pending', 'confirmed', 'exported']) text(`cloud-${key}`, number(data.stats?.[key]));
+    renderCloudFiles();
+  }
+
+  function renderCloudFiles() {
+    const { data } = state.cloud;
+    const connected = data.session_authenticated || data.token_configured;
+    const files = Array.isArray(data.files) ? data.files : [];
+    const lastPage = Math.max(0, Math.ceil(files.length / cloudPageSize) - 1);
+    state.cloud.page = Math.min(state.cloud.page, lastPage);
+    const start = cloudPageSize * state.cloud.page;
+    const rows = files.slice(start, start + cloudPageSize);
+    const labels = { pending: ['待确认', 'warning'], confirmed: ['待导出', 'neutral'], exported: ['已生成', 'success'] };
+    $('cloud-files').replaceChildren(...rows.map((file) => {
+      const row = element('tr');
+      const label = element('td');
+      const name = String(file.relative_path || file.track_id).split('/').pop();
+      label.append(element('strong', 'cell-title', name), element('p', 'field-hint cloud-file-task', file.task_id));
+      if (file.strm_path) label.append(element('p', 'field-hint cloud-file-path', file.strm_path));
+      const status = element('td');
+      const [statusLabel, tone] = labels[file.status] || labels.pending;
+      status.append(element('span', `status-badge status-${tone}`, statusLabel));
+      row.append(label, element('td', '', file.task_id), status);
+      return row;
+    }));
+    show('cloud-table', rows.length > 0);
+    show('cloud-empty', rows.length === 0);
+    text('cloud-empty-title', data.runtime_enabled ? '暂无导出记录' : 'STRM 导出未启用');
+    text('cloud-empty-description', data.runtime_enabled
+      ? connected ? '运行订阅任务，待 CD2 完成上传后即可生成。'
+        : data.stats?.confirmed > 0 ? '已有确认的音频，可先修复 STRM；核对新的 CD2 上传需先登录。'
+          : '先扫码登录，再核对 CD2 已上传的音频。'
+      : '保存设置并重启服务后，可在这里查看导出进度。');
+    $('cloud-empty').classList.toggle('cloud-empty-setup', !data.runtime_enabled);
+    show('cloud-pagination', lastPage > 0 || Boolean(data.files_truncated));
+    text('cloud-file-count', `${start + 1}–${start + rows.length} / ${files.length} 条记录${data.files_truncated ? '（仅显示前 100 条）' : ''}`);
+    $('cloud-prev').disabled = state.cloud.page === 0;
+    $('cloud-next').disabled = state.cloud.page >= lastPage;
+  }
+
+  function cloudFeedback(id, message) {
+    text(id, message);
+    show(id, Boolean(message));
+  }
+
+  async function loadCloud() {
+    if (state.cloud.controller) state.cloud.controller.abort();
+    const controller = new AbortController();
+    state.cloud.controller = controller;
+    show('cloud-loading', !state.cloud.data);
+    cloudFeedback('cloud-error', '');
+    try {
+      const data = await request(cloudPath, { timeout: 20000, signal: controller.signal });
+      if (controller.signal.aborted) return;
+      state.cloud.data = data;
+      if (!state.cloud.dirty) {
+        for (const input of $('cloud-fields').querySelectorAll('input[name]')) {
+          if (input.type === 'checkbox') input.checked = Boolean(data.settings[input.name]);
+          else input.value = data.settings[input.name] ?? '';
+        }
+      }
+      renderCloud();
+    } catch (error) {
+      if (!controller.signal.aborted) cloudFeedback('cloud-error', error.message);
+    } finally {
+      if (state.cloud.controller === controller) {
+        state.cloud.controller = null;
+        show('cloud-loading', false);
+      }
+    }
+  }
+
+  async function cloudAction(button, action, busyText, fn, errorID = 'cloud-error') {
+    if (state.cloud.operation || button.disabled) return;
+    state.cloud.operation = action;
+    cloudFeedback(errorID, '');
+    try {
+      await busyButton(button, busyText, async () => {
+        renderCloud();
+        await fn();
+      });
+    } catch (error) {
+      cloudFeedback(errorID, error.message);
+      if (errorID === 'cloud-settings-error') $(errorID).focus();
+    } finally {
+      state.cloud.operation = '';
+      renderCloud();
+    }
+  }
+
+  function saveCloudSettings(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const settings = Object.fromEntries(Array.from(new FormData(form), ([key, value]) => [key, value.trim()]));
+    settings.enabled = $('cloud-enabled').checked;
+    if (settings.enabled && !/^[1-9][0-9]{0,19}$/.test(settings.target_cid)) {
+      cloudFeedback('cloud-settings-error', '启用 115 时，请填写非根目录的数字 CID。');
+      $('cloud-target-cid').focus();
+      return;
+    }
+    if (Boolean(settings.navidrome_url) !== Boolean(settings.navidrome_mount_root)) {
+      const missing = $(settings.navidrome_url ? 'cloud-navidrome-mount-root' : 'cloud-navidrome-url');
+      missing.closest('details').open = true;
+      cloudFeedback('cloud-settings-error', '请同时填写 Navidrome 服务地址与挂载路径。');
+      missing.focus();
+      return;
+    }
+    cloudAction($('cloud-save'), 'save', '正在保存', async () => {
+      const result = await request(`${cloudPath}/settings`, { method: 'PUT', body: settings });
+      state.cloud.dirty = false;
+      await loadCloud();
+      toast(result.restart_required ? '设置已保存，重启服务后生效' : '115 设置已保存');
+    }, 'cloud-settings-error');
+  }
+
+  function cloudSessionPath(id) {
+    return `${cloudPath}/login?session_id=${encodeURIComponent(id)}`;
+  }
+
+  function cancelCloudLogin() {
+    const session = state.cloud.login;
+    if (!session) return;
+    state.cloud.login = null;
+    clearTimeout(session.timer);
+    session.controller.abort();
+    $('cloud-qr').replaceChildren();
+    if (session.id) request(cloudSessionPath(session.id), { method: 'DELETE', timeout: 5000 }).catch(() => {});
+  }
+
+  function renderCloudLogin(message, { qr = false, loading = false, retry = false, error = false } = {}) {
+    text('cloud-login-status', message);
+    $('cloud-login-status').classList.toggle('is-error', error);
+    show('cloud-qr', qr);
+    show('cloud-qr-loading', loading);
+    show('cloud-qr-frame', qr || loading);
+    show('cloud-login-retry', retry);
+  }
+
+  async function cloudQRImage(path, id, signal) {
+    if (path !== `${cloudPath}/login/qr?session_id=${encodeURIComponent(id)}`) throw new Error('服务返回了无效的二维码地址。');
+    const response = await fetch(path, { headers: { 'X-Meloport-Request': '1' }, mode: 'same-origin', redirect: 'error', cache: 'no-store', signal });
+    if (!response.ok || response.headers.get('Content-Type') !== 'image/png') throw new Error('无法读取二维码，请重新获取。');
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('无法读取二维码，请重新获取。'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function pollCloudLogin(session) {
+    if (state.cloud.login !== session) return;
+    try {
+      const result = await request(cloudSessionPath(session.id), { signal: session.controller.signal, timeout: 95000 });
+      if (state.cloud.login !== session) return;
+      if (result.status === 'authorized') {
+        state.cloud.login = null;
+        closeDialog('cloud-login-dialog');
+        await loadCloud();
+        toast('115 网盘已授权');
+        return;
+      }
+      if (result.status === 'waiting' || result.status === 'scanned') {
+        renderCloudLogin(result.status === 'scanned' ? '已扫码，请在手机上确认。' : '等待扫码…', { qr: true });
+        session.timer = setTimeout(() => pollCloudLogin(session), 1800);
+        return;
+      }
+      const labels = { expired: '二维码已过期，请重新获取。', cancelled: '手机端已取消授权。' };
+      renderCloudLogin(labels[result.status] || result.error || '授权未完成，请重新获取二维码。', { retry: true, error: true });
+    } catch (error) {
+      if (state.cloud.login === session) renderCloudLogin(error.message, { retry: true, error: true });
+    }
+  }
+
+  async function startCloudLogin(trigger) {
+    cancelCloudLogin();
+    const dialog = $('cloud-login-dialog');
+    if (!dialog.open) {
+      state.dialogTriggers.set(dialog.id, trigger);
+      dialog.showModal();
+    }
+    const session = { id: '', timer: null, controller: new AbortController() };
+    state.cloud.login = session;
+    renderCloudLogin('正在获取二维码…', { loading: true });
+    try {
+      const result = await request(`${cloudPath}/login`, { method: 'POST', timeout: 25000 });
+      session.id = result.session_id;
+      if (state.cloud.login !== session) {
+        if (session.id) request(cloudSessionPath(session.id), { method: 'DELETE', timeout: 5000 }).catch(() => {});
+        return;
+      }
+      const image = await cloudQRImage(result.qrcode, session.id, session.controller.signal);
+      if (state.cloud.login !== session) return;
+      const qr = element('img');
+      qr.alt = '115 登录二维码';
+      qr.width = qr.height = 224;
+      qr.src = image;
+      $('cloud-qr').replaceChildren(qr);
+      renderCloudLogin('等待扫码…', { qr: true });
+      session.timer = setTimeout(() => pollCloudLogin(session), 1800);
+    } catch (error) {
+      if (state.cloud.login === session) renderCloudLogin(error.message, { retry: true, error: true });
+    }
+  }
+
   function route() {
     const requested = window.location.hash.slice(1) || 'overview';
     const next = Object.hasOwn(titles, requested) ? requested : 'overview';
@@ -1335,6 +1572,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (next === 'rankings') loadRankings(state.rankings.platform);
     if (previous === 'audio' && next !== 'audio' && state.audio.controller) state.audio.controller.abort();
     if (next === 'audio' && previous !== 'audio') loadAudio();
+    if (next === 'cloud115' && previous !== 'cloud115') loadCloud();
   }
 
   $('refresh-button').addEventListener('click', async (event) => {
@@ -1352,6 +1590,41 @@ document.addEventListener('DOMContentLoaded', () => {
   $('settings-form').addEventListener('input', markSettingsDirty);
   $('settings-form').addEventListener('change', markSettingsDirty);
   $('settings-form').addEventListener('submit', saveSettings);
+  $('cloud-settings').addEventListener('input', () => { state.cloud.dirty = true; renderCloud(); });
+  $('cloud-settings').addEventListener('submit', saveCloudSettings);
+  $('cloud-refresh').addEventListener('click', (event) => busyButton(event.currentTarget, '正在刷新', loadCloud));
+  $('cloud-setup-link').addEventListener('click', (event) => {
+    event.preventDefault();
+    $('cloud-settings-title').focus();
+    $('cloud-settings-title').scrollIntoView({ block: 'start' });
+  });
+  $('cloud-login').addEventListener('click', (event) => startCloudLogin(event.currentTarget));
+  $('cloud-login-retry').addEventListener('click', (event) => startCloudLogin(event.currentTarget));
+  $('cloud-login-dialog').addEventListener('close', cancelCloudLogin);
+  $('cloud-logout').addEventListener('click', (event) => cloudAction(event.currentTarget, 'logout', '正在退出', async () => {
+    await request(`${cloudPath}/session`, { method: 'DELETE' });
+    cloudFeedback('cloud-check-result', '');
+    await loadCloud();
+    toast('已退出扫码授权');
+  }));
+  $('cloud-check').addEventListener('click', (event) => cloudAction(event.currentTarget, 'check', '正在检查', async () => {
+    cloudFeedback('cloud-check-result', '');
+    const result = await request(`${cloudPath}/check`, { method: 'POST', timeout: 95000 });
+    await loadCloud();
+    const name = result.account?.name;
+    cloudFeedback('cloud-check-result', name ? `${name} 的授权有效，目标目录可以访问。` : '115 授权有效，目标目录可以访问。');
+  }));
+  $('cloud-reconcile').addEventListener('click', (event) => cloudAction(event.currentTarget, 'reconcile', '正在核对', async () => {
+    cloudFeedback('cloud-reconcile-result', '');
+    try {
+      await request(`${cloudPath}/reconcile`, { method: 'POST', timeout: 115000 });
+      cloudFeedback('cloud-reconcile-result', '核对完成，导出状态已更新。');
+    } finally {
+      await loadCloud();
+    }
+  }));
+  $('cloud-prev').addEventListener('click', () => { state.cloud.page--; renderCloudFiles(); });
+  $('cloud-next').addEventListener('click', () => { state.cloud.page++; renderCloudFiles(); });
   $('search-form').addEventListener('submit', (event) => { event.preventDefault(); searchSongs(0, true); });
   $('search-prev').addEventListener('click', () => searchSongs(Math.max(0, state.search.offset - state.search.limit)));
   $('search-next').addEventListener('click', () => searchSongs(state.search.offset + state.search.limit));
@@ -1422,6 +1695,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (state.search.controller) state.search.controller.abort();
     if (state.rankings.controller) state.rankings.controller.abort();
     if (state.audio.controller) state.audio.controller.abort();
+    if (state.cloud.controller) state.cloud.controller.abort();
+    cancelCloudLogin();
   });
   setupSchedule('settings');
   setupSchedule('task');

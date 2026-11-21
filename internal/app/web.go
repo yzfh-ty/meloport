@@ -54,6 +54,8 @@ type webController struct {
 	webDir    string
 	configDir string
 	stopping  bool
+	cloud     *cloudRuntime
+	cloudBoot config.Cloud115
 	rankingMu sync.Mutex
 	rankings  map[string]rankingCache
 	// Protected by changes. Keep task and storage edits clear of a running repair.
@@ -67,8 +69,10 @@ type rankingCache struct {
 
 func newWebController(cfg *config.Config, tasks []config.Task, queue *taskQueue, logger *slog.Logger, options serviceOptions) *webController {
 	c := &webController{cfg: cfg, queue: queue, logger: logger, store: options.Store, metadata: options.Metadata, audio: options.Audio, webDir: options.WebDir, tasks: make(map[string]config.Task), entries: make(map[string]cron.EntryID), scheduler: cron.New(cron.WithLocation(cfg.Location)), rankings: make(map[string]rankingCache)}
+	c.cloud, c.cloudBoot = options.Cloud, cfg.Cloud115
 	if options.ConfigPath != "" {
 		c.editor = config.NewEditor(options.ConfigPath)
+		c.editor.ProtectActiveCloud(cfg.Cloud115)
 		if absolute, err := filepath.Abs(options.ConfigPath); err == nil {
 			c.configDir = filepath.Dir(absolute)
 		}
@@ -195,6 +199,15 @@ func (c *webController) handler(health http.Handler, ready *atomic.Bool) http.Ha
 	mux.HandleFunc("GET /api/audio", c.listAudio)
 	mux.HandleFunc("POST /api/audio/{task}/{platform}/{track}/retag", c.retagAudio)
 	mux.HandleFunc("PUT /api/settings", c.settings)
+	mux.HandleFunc("GET /api/cloud115", c.cloudOverview)
+	mux.HandleFunc("PUT /api/cloud115/settings", c.cloudSettings)
+	mux.HandleFunc("POST /api/cloud115/check", c.cloudCheck)
+	mux.HandleFunc("POST /api/cloud115/reconcile", c.cloudReconcile)
+	mux.HandleFunc("POST /api/cloud115/login", c.cloudLoginBegin)
+	mux.HandleFunc("GET /api/cloud115/login", c.cloudLoginStatus)
+	mux.HandleFunc("GET /api/cloud115/login/qr", c.cloudLoginQR)
+	mux.HandleFunc("DELETE /api/cloud115/login", c.cloudLoginCancel)
+	mux.HandleFunc("DELETE /api/cloud115/session", c.cloudLogout)
 	mux.HandleFunc("POST /api/run", c.runAll)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		webError(w, http.StatusNotFound, "unknown management endpoint")
@@ -217,6 +230,10 @@ func (c *webController) handler(health http.Handler, ready *atomic.Bool) http.Ha
 			}
 			if r.URL.Path == "/api/audio" && r.Header.Get("X-Meloport-Request") != "1" {
 				webError(w, 403, "audio management requests require the Meloport request header")
+				return
+			}
+			if (r.URL.Path == "/api/cloud115" || strings.HasPrefix(r.URL.Path, "/api/cloud115/")) && r.Header.Get("X-Meloport-Request") != "1" {
+				webError(w, 403, "115 management requests require the Meloport request header")
 				return
 			}
 			if r.URL.Path == "/api/search" || r.URL.Path == "/api/rankings" || strings.HasPrefix(r.URL.Path, "/api/rankings/") || strings.HasSuffix(r.URL.Path, "/playlist") {

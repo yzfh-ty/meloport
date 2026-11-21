@@ -46,6 +46,7 @@ type SettingsInput struct {
 type Editor struct {
 	path          string
 	mu            sync.Mutex
+	activeCloud   Cloud115
 	beforePublish func() // Deterministic coordination for external-editor tests.
 }
 
@@ -233,6 +234,15 @@ func (e *Editor) update(change func(*yaml.Node) error) (*Config, error) {
 	candidate, err := Load(temporary)
 	if err != nil {
 		return nil, fmt.Errorf("configuration update is invalid: %w", err)
+	}
+	if e.activeCloud.Enabled && !e.activeCloud.SameRuntime(candidate.Cloud115) {
+		// Until restart the running process still writes to the original
+		// staging and export trees, even if the YAML uses different ones.
+		running := *candidate
+		running.Cloud115 = e.activeCloud
+		if err := running.validateCloud115(filepath.Dir(temporary)); err != nil {
+			return nil, fmt.Errorf("configuration conflicts with the running 115 settings; restart Meloport before changing the download directories: %w", err)
+		}
 	}
 	if e.beforePublish != nil {
 		e.beforePublish()

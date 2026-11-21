@@ -17,6 +17,7 @@ import (
 type Cloud115 struct {
 	Enabled            bool     `yaml:"enabled"`
 	AccessTokenEnv     string   `yaml:"access_token_env"`
+	ClientID           string   `yaml:"client_id"`
 	TargetCID          string   `yaml:"target_cid"`
 	StagingDir         string   `yaml:"staging_dir"`
 	STRMDir            string   `yaml:"strm_dir"`
@@ -26,11 +27,14 @@ type Cloud115 struct {
 	NavidromeMountRoot string   `yaml:"navidrome_mount_root"`
 	PollInterval       Duration `yaml:"poll_interval"`
 	Timeout            Duration `yaml:"timeout"`
+	stagingDirInput    string
+	strmDirInput       string
 }
 
 func cloud115Defaults() Cloud115 {
 	return Cloud115{
 		AccessTokenEnv: "MELOPORT_115_ACCESS_TOKEN",
+		ClientID:       "100197303",
 		StagingDir:     "data/115-staging", STRMDir: "data/strm",
 		MediaListen: "127.0.0.1:8081", MediaBaseURL: "http://127.0.0.1:8081",
 		PollInterval: Duration{time.Minute}, Timeout: Duration{15 * time.Second},
@@ -39,10 +43,11 @@ func cloud115Defaults() Cloud115 {
 
 func (c *Config) validateCloud115(baseDir string) error {
 	cloud := &c.Cloud115
-	if !cloud.Enabled {
-		return nil
+	cloud.stagingDirInput, cloud.strmDirInput = cloud.StagingDir, cloud.STRMDir
+	if !idPattern.MatchString(cloud.ClientID) {
+		return errors.New("cloud115.client_id must be a numeric 115 application ID")
 	}
-	if !envPattern.MatchString(cloud.AccessTokenEnv) || !idPattern.MatchString(cloud.TargetCID) {
+	if !envPattern.MatchString(cloud.AccessTokenEnv) || (cloud.Enabled || cloud.TargetCID != "") && !idPattern.MatchString(cloud.TargetCID) {
 		return errors.New("cloud115 requires an access token environment variable name and a non-root numeric target_cid")
 	}
 	if cloud.Timeout.Duration < time.Second || cloud.Timeout.Duration > time.Minute || cloud.PollInterval.Duration < 15*time.Second || cloud.PollInterval.Duration > 24*time.Hour {
@@ -68,6 +73,9 @@ func (c *Config) validateCloud115(baseDir string) error {
 		if !media.ValidMountRoot(cloud.NavidromeMountRoot) {
 			return errors.New("cloud115.navidrome_mount_root must be an absolute POSIX or Windows drive path")
 		}
+	}
+	if !cloud.Enabled {
+		return nil
 	}
 	if cloud.StagingDir, err = ResolveMusicDirectory(baseDir, cloud.StagingDir); err != nil {
 		return errors.New("cloud115.staging_dir must be a valid directory")

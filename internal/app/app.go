@@ -126,9 +126,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 		return enc.Encode(runs)
 	}
 	var drive *cloud115.Client
-	if command == "cloud-check" || command == "cloud-reconcile" || cfg.Cloud115.Enabled && (command == "serve" || command == "sync") {
+	if command == "cloud-check" || command == "cloud-reconcile" || cfg.Cloud115.Enabled && (command == "sync" || command == "serve") {
 		drive, err = cloudClient(cfg.Cloud115)
-		if err != nil {
+		if err != nil && (command != "serve" || !cfg.Cloud115.Enabled || optionalEnv(cfg.Cloud115.AccessTokenEnv) != "") {
 			return err
 		}
 		if command == "cloud-check" {
@@ -216,7 +216,11 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 	var cloud *cloudRuntime
 	if cfg.Cloud115.Enabled {
 		cloud = newCloudRuntime(cfg.Cloud115, drive, store)
-		engine.UseCloudStorage(cloud.sync)
+		if command == "retag" {
+			engine.UseCloudStorage(cloud.sync)
+		} else {
+			engine.UseCloudStorage(cloud)
+		}
 	}
 	if command == "cloud-reconcile" {
 		if err := cloud.sync.Reconcile(ctx); err != nil {

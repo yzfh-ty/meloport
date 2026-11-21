@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/gofrs/flock v0.13.2
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	go.senan.xyz/taglib v0.15.0
 	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/sys v0.49.0
