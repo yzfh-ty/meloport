@@ -8,7 +8,7 @@
 - Preserve incremental synchronization: download missing files, retain songs removed from remote playlists, and never delete audio when deleting a subscription.
 - Serve the embedded Web UI from the same Go binary. Persist task/default-rule changes to YAML and update scheduling safely. Keep the local management listener on loopback and retain same-origin write protection.
 - Develop and verify locally; Docker packaging is deferred until requested. Every test or preview must stop its owned processes and release its ports afterward.
-- Put Chinese design notes in `tmp/`. Keep reference clones under ignored `tmp/references/`. Do not commit caches, binaries, local configuration, keys or runtime data.
+- Keep user guides in `docs/`. Keep local design notes and reference clones under ignored `tmp/`. Do not commit caches, binaries, local configuration, keys or runtime data.
 - Use English Git commit messages. The project remote is `https://github.com/yzfh-ty/meloport.git`.
 - After completing and validating each change, create a local Git commit. Push only when the user requests it.
 - For Web UI development, use `scripts/dev.ps1 -Action dev`; it serves the three whitelisted source assets live. Restart this Go process after backend changes.

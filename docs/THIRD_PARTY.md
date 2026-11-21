@@ -1,4 +1,4 @@
-# 音频标签组件
+# 第三方组件与许可证
 
 ## go-taglib 与 TagLib
 
@@ -25,3 +25,7 @@
    ```
 
 也可以在模块依赖中以 `go mod edit -replace` 指向自行修改、重建的本地 go-taglib，再从源码重新编译。固定依赖的校验信息保留于 `go.sum`。
+
+## go-qrcode
+
+Meloport 使用 `github.com/skip2/go-qrcode` 在本地把 115 扫码内容编码为 PNG。固定版本为 `v0.0.0-20200617195104-da1b6568686e`，使用 MIT 许可证。[上游源码](https://github.com/skip2/go-qrcode/tree/da1b6568686e) · [许可证原文](licenses/go-qrcode-MIT.txt)

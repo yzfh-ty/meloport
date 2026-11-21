@@ -1,17 +1,33 @@
+# Build output, caches and runtime state
 /.cache/
-/tmp/references/
-/tmp/参考项目调研.md
-/tmp/Web界面设计.md
 /bin/
 /data/
-/config.yaml
-/.env
-/.env.*
-!/.env.example
 *.test
 *.exe
 *.out
 *.log
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.strm
+
+# Local configuration and its backups
+/config.yaml
+/config.yaml.*
+/config.local.yaml
+/config.*.local.yaml
+/.env
+/.env.*
+!/.env.example
+
+# Local development notes and upstream API reference
+/tmp/
+/docs/ChKSz API.md
+
+# Editor and operating-system files
 .DS_Store
 .idea/
 .vscode/

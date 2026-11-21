@@ -1,0 +1,30 @@
+* text=auto
+
+.gitattributes text eol=lf
+.gitignore text eol=lf
+*.go text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.md text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.ps1 text eol=lf
+*.cmd text eol=crlf
+go.mod text eol=lf
+go.sum text eol=lf
+docs/licenses/*.txt text eol=lf
+
+# Keep generated audio fixtures binary.
+*.aiff binary
+*.aif binary
+*.flac binary
+*.m4a binary
+*.mp3 binary
+*.ogg binary
+*.opus binary
+*.wav binary
+*.wv binary
+*.aac binary
+*.ape binary
+*.wma binary
