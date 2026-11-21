@@ -8,6 +8,7 @@ import (
 
 type Track struct {
 	ID           string   `json:"id"`
+	Platform     string   `json:"-"` // Runtime namespace for native lookups on this ID.
 	Name         string   `json:"name"`
 	Artists      []string `json:"artists"`
 	Album        string   `json:"album"`

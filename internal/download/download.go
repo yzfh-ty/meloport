@@ -33,11 +33,18 @@ type Options struct {
 	Timeout    time.Duration
 	MaxBytes   int64
 	HTTPClient *http.Client
+	Lyrics     LyricsSource
+}
+
+// LyricsSource retrieves text for the native track ID without resolving audio.
+type LyricsSource interface {
+	Lyrics(context.Context, string, model.Track) (string, error)
 }
 
 type Downloader struct {
 	client   *http.Client
 	maxBytes int64
+	lyrics   LyricsSource
 }
 
 func New(opts Options) (*Downloader, error) {
@@ -74,7 +81,7 @@ func New(opts Options) (*Downloader, error) {
 		req.Header.Del("Referer")
 		return nil
 	}
-	return &Downloader{client: &client, maxBytes: opts.MaxBytes}, nil
+	return &Downloader{client: &client, maxBytes: opts.MaxBytes, lyrics: opts.Lyrics}, nil
 }
 
 // Download saves an audio file under directory/basename.<detected format>.
@@ -106,7 +113,7 @@ func (d *Downloader) Download(ctx context.Context, audio model.ResolvedTrack, di
 			return empty, err
 		}
 		if exists {
-			if len(trackTags(audio.Track)) == 0 && model.CanonicalCoverURL(audio.Track.CoverURL) == "" {
+			if !d.hasTagInput(audio.Track) {
 				result.TagsComplete = true
 				return result, nil
 			}
@@ -192,7 +199,7 @@ func (d *Downloader) Download(ctx context.Context, audio model.ResolvedTrack, di
 	}
 	result := model.DownloadResult{Size: size, SHA256: hex.EncodeToString(hash.Sum(nil))}
 	publishPath := tempPath
-	hasTags := len(trackTags(audio.Track)) != 0 || model.CanonicalCoverURL(audio.Track.CoverURL) != ""
+	hasTags := d.hasTagInput(audio.Track)
 	if hasTags {
 		stage, tagged, tagErr := d.prepareTags(ctx, audio.Track, tempPath, ext)
 		if tagErr != nil {

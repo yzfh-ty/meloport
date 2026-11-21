@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -26,7 +27,14 @@ type coverTransport func(*http.Request) (*http.Response, error)
 
 func (f coverTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+type lyricsFunc func(context.Context, string, model.Track) (string, error)
+
+func (f lyricsFunc) Lyrics(ctx context.Context, source string, track model.Track) (string, error) {
+	return f(ctx, source, track)
+}
+
 func TestDownloadEmbeddedTagsAndCover(t *testing.T) {
+	const lyrics = "[00:00.00]测试第一句\n[00:00.08]第二句 🎵"
 	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
 	img.Set(0, 0, color.RGBA{R: 255, A: 255})
 	var cover bytes.Buffer
@@ -56,8 +64,15 @@ func TestDownloadEmbeddedTagsAndCover(t *testing.T) {
 				}
 				return http.DefaultTransport.RoundTrip(r)
 			})}
-			d := newDownloader(t, Options{HTTPClient: client})
-			track := model.Track{Name: "测试曲目", Artists: []string{"艺人甲", "艺人乙"}, Album: "合辑", AlbumArtists: []string{"群星"}, TrackNumber: 3, DiscNumber: 1, Year: "2025", CoverURL: "https://y.gtimg.cn/example.png"}
+			lyricCalls := 0
+			d := newDownloader(t, Options{HTTPClient: client, Lyrics: lyricsFunc(func(_ context.Context, source string, track model.Track) (string, error) {
+				lyricCalls++
+				if source != "qq" || track.ID != "004LyricFixture" {
+					t.Fatalf("unexpected lyrics identity: %s/%s", source, track.ID)
+				}
+				return strings.ReplaceAll(lyrics, "\n", "\r\n") + "\r\n", nil
+			})})
+			track := model.Track{Platform: "qq", ID: "004LyricFixture", Name: "测试曲目", Artists: []string{"艺人甲", "艺人乙"}, Album: "合辑", AlbumArtists: []string{"群星"}, TrackNumber: 3, DiscNumber: 1, Year: "2025", CoverURL: "https://y.gtimg.cn/example.png"}
 			dir := t.TempDir()
 			got, err := d.Download(context.Background(), model.ResolvedTrack{URL: server.URL, Size: int64(len(input)), Track: track}, dir, "qq-track")
 			if err != nil || !got.TagsComplete || got.TagWarning != "" {
@@ -69,6 +84,9 @@ func TestDownloadEmbeddedTagsAndCover(t *testing.T) {
 			}
 			if want := trackTags(track); !reflect.DeepEqual(selectTags(tags, want), want) {
 				t.Fatalf("tags = %#v, want %#v", tags, want)
+			}
+			if lyricCalls != 1 || !reflect.DeepEqual(tags[taglib.Lyrics], []string{lyrics}) {
+				t.Fatalf("lyrics = %#v, requests = %d", tags[taglib.Lyrics], lyricCalls)
 			}
 			art, err := taglib.ReadImage(got.Path)
 			if err != nil || !bytes.Equal(art, cover.Bytes()) || coverCalls != 1 {
@@ -86,7 +104,7 @@ func TestDownloadEmbeddedTagsAndCover(t *testing.T) {
 			// the supplied metadata has changed.
 			track.Name = "Do not overwrite"
 			reused, err := d.Tag(context.Background(), track, got.Path)
-			if err != nil || reused != got || coverCalls != 1 {
+			if err != nil || reused != got || coverCalls != 1 || lyricCalls != 1 {
 				t.Fatalf("local repeat changed original tags: %+v %v", reused, err)
 			}
 			entries, err := os.ReadDir(dir)
@@ -112,14 +130,44 @@ func TestTagCoverFailureKeepsTextAndExistingFields(t *testing.T) {
 	client := &http.Client{Transport: coverTransport(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("not an image")), ContentLength: -1}, nil
 	})}
-	d := newDownloader(t, Options{HTTPClient: client})
-	result, err := d.Tag(context.Background(), model.Track{Name: "普通标题", Artists: []string{"歌手"}, Album: "专辑", CoverURL: "https://y.gtimg.cn/example.png"}, path)
+	d := newDownloader(t, Options{HTTPClient: client, Lyrics: lyricsFunc(func(context.Context, string, model.Track) (string, error) {
+		t.Fatal("lyrics were requested for a file with lyrics")
+		return "", nil
+	})})
+	result, err := d.Tag(context.Background(), model.Track{Platform: "qq", ID: "004LyricFixture", Name: "普通标题", Artists: []string{"歌手"}, Album: "专辑", CoverURL: "https://y.gtimg.cn/example.png"}, path)
 	if err != nil || !result.TagsComplete || !strings.Contains(result.TagWarning, "cover could not") {
 		t.Fatalf("result %+v, error %v", result, err)
 	}
 	tags, err := taglib.ReadTags(path)
 	want := map[string][]string{"TITLE": {"我的标题"}, "ARTIST": {"歌手"}, "ALBUM": {"专辑"}, "MUSICBRAINZ_TRACKID": {"fixture-id"}, "LYRICS": {"my lyrics"}}
 	if err != nil || !reflect.DeepEqual(selectTags(tags, want), want) {
+		t.Fatalf("tags %+v, error %v", tags, err)
+	}
+}
+
+func TestTagLyricsFailureLeavesOtherTagsUsable(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "tone.flac"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "track.flac")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Transport: coverTransport(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("private cover transport error")
+	})}
+	d := newDownloader(t, Options{HTTPClient: client, Lyrics: lyricsFunc(func(context.Context, string, model.Track) (string, error) {
+		return "", errors.New("private lyric transport error")
+	})})
+	result, err := d.Tag(context.Background(), model.Track{
+		Platform: "qq", ID: "004LyricFixture", Name: "测试曲目", CoverURL: "https://y.gtimg.cn/example.png",
+	}, path)
+	if err != nil || !result.TagsComplete || result.TagWarning != "lyrics could not be downloaded; cover could not be downloaded" {
+		t.Fatalf("result %+v, error %v", result, err)
+	}
+	tags, err := taglib.ReadTags(path)
+	if err != nil || !reflect.DeepEqual(tags[taglib.Title], []string{"测试曲目"}) || len(tags[taglib.Lyrics]) != 0 {
 		t.Fatalf("tags %+v, error %v", tags, err)
 	}
 }

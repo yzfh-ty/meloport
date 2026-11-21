@@ -171,7 +171,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 	if len(selected) == 0 && command == "retag" {
 		return errors.New("no configured tasks match; check tasks and -task")
 	}
-	downloader, err := download.New(download.Options{Timeout: cfg.Download.Timeout.Duration, MaxBytes: cfg.Download.MaxSizeMB * 1024 * 1024})
+	downloader, err := download.New(download.Options{
+		Timeout: cfg.Download.Timeout.Duration, MaxBytes: cfg.Download.MaxSizeMB * 1024 * 1024, Lyrics: metadata,
+	})
 	if err != nil {
 		return err
 	}

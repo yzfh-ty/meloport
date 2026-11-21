@@ -23,6 +23,7 @@ import (
 
 const maxCoverBytes = 8 << 20
 const maxTagGrowth = 16 << 20
+const maxLyricsBytes = 256 << 10
 
 // Tag fills missing tags on a tracked file. Work happens on a separate copy;
 // failures or cancellation before replacement leave the original bytes intact.
@@ -71,10 +72,12 @@ func (d *Downloader) prepareTags(ctx context.Context, track model.Track, path, e
 	}
 	values := trackTags(track)
 	cover := model.CanonicalCoverURL(track.CoverURL)
-	if (len(values) == 0 && cover == "") || !taggableFormat(ext) {
+	fetchLyrics := d.canFetchLyrics(track)
+	hasInput := len(values) != 0 || cover != "" || fetchLyrics
+	if !hasInput || !taggableFormat(ext) {
 		result, err = d.inspectTagOutput(ctx, path)
 		result.TagsComplete = err == nil
-		if len(values) != 0 || cover != "" {
+		if hasInput {
 			result.TagWarning = "this audio format does not support tag writing"
 		}
 		return stage, result, err
@@ -116,6 +119,17 @@ func (d *Downloader) prepareTags(ctx context.Context, track model.Track, path, e
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		if fetchLyrics && !hasEmbeddedLyrics(original) {
+			lyrics, err := d.fetchLyrics(ctx, track)
+			switch {
+			case ctx.Err() != nil:
+				return ctx.Err()
+			case err != nil:
+				warning = appendTagWarning(warning, "lyrics could not be downloaded")
+			case lyrics != "":
+				values[taglib.Lyrics] = []string{lyrics}
+			}
+		}
 		if len(values) != 0 {
 			if err := taglib.WriteTags(stage.path, values, 0); err != nil {
 				return errors.New("cannot write audio tags")
@@ -131,14 +145,14 @@ func (d *Downloader) prepareTags(ctx context.Context, track model.Track, path, e
 			case ctx.Err() != nil:
 				return ctx.Err()
 			case err != nil:
-				warning = "cover could not be downloaded"
+				warning = appendTagWarning(warning, "cover could not be downloaded")
 			default:
 				// Stage cover edits separately so a failed image write cannot
 				// damage successfully written text tags.
 				if d.applyCover(ctx, stage, ext, data, mime) {
 					changed = true
 				} else {
-					warning = "cover could not be embedded in this audio file"
+					warning = appendTagWarning(warning, "cover could not be embedded in this audio file")
 				}
 			}
 		}
@@ -169,6 +183,10 @@ func (d *Downloader) prepareTags(ctx context.Context, track model.Track, path, e
 			}
 			if key == taglib.Title || key == taglib.Artist || key == taglib.Album {
 				return errors.New("the audio format did not retain the requested title, artist or album")
+			}
+			if key == taglib.Lyrics {
+				warning = appendTagWarning(warning, "lyrics could not be embedded in this audio file")
+				continue
 			}
 			optionalMissing = true
 		}
@@ -343,6 +361,53 @@ func (d *Downloader) fetchCover(ctx context.Context, rawURL string) ([]byte, str
 		return nil, "", errors.New("cover image is incomplete or damaged")
 	}
 	return data, "image/" + kind, nil
+}
+
+func (d *Downloader) hasTagInput(track model.Track) bool {
+	return len(trackTags(track)) != 0 || model.CanonicalCoverURL(track.CoverURL) != "" || d.canFetchLyrics(track)
+}
+
+func (d *Downloader) canFetchLyrics(track model.Track) bool {
+	return d.lyrics != nil && track.Platform != ""
+}
+
+func hasEmbeddedLyrics(tags map[string][]string) bool {
+	for key, values := range tags {
+		// TagLib maps ID3 lyric frames with custom descriptions to LYRICS:<description>.
+		name, _, _ := strings.Cut(strings.ToUpper(key), ":")
+		switch name {
+		case taglib.Lyrics, "UNSYNCEDLYRICS", "SYNCEDLYRICS":
+			for _, value := range values {
+				if strings.TrimSpace(value) != "" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func (d *Downloader) fetchLyrics(ctx context.Context, track model.Track) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	defer cancel()
+	lyrics, err := d.lyrics.Lyrics(ctx, track.Platform, track)
+	if err != nil {
+		return "", err
+	}
+	if len(lyrics) > maxLyricsBytes {
+		return "", errors.New("lyrics exceed the allowed size")
+	}
+	// Retain line breaks and timestamps, and remove controls that cannot be
+	// carried in TagLib's string values (such as NUL and vertical tab).
+	lyrics = strings.ReplaceAll(lyrics, "\r\n", "\n")
+	lyrics = strings.ReplaceAll(lyrics, "\r", "\n")
+	lyrics = strings.Map(func(r rune) rune {
+		if r != '\n' && r != '\t' && unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, lyrics)
+	return strings.TrimSpace(lyrics), nil
 }
 
 func trackTags(track model.Track) map[string][]string {

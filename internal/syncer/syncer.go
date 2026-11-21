@@ -206,6 +206,7 @@ func (e *Engine) Run(ctx context.Context, task model.Task) (summary Summary, ret
 		addIssue(fmt.Sprintf("playlist is incomplete: expected %d tracks, received %d", playlist.ReportedCount, len(playlist.Tracks)))
 	}
 	for _, track := range tracks {
+		track.Platform = providerName
 		track.CoverURL = model.CanonicalCoverURL(track.CoverURL)
 		if err := ctx.Err(); err != nil {
 			return summary, err
@@ -293,7 +294,7 @@ func (e *Engine) Run(ctx context.Context, task model.Task) (summary Summary, ret
 	return summary, nil
 }
 
-// RetagSummary describes an explicit local-only metadata repair. Audio is never
+// RetagSummary describes a metadata repair of tracked files. Audio is never
 // resolved or downloaded, even when a local file is missing or invalid.
 type RetagSummary struct {
 	TaskID      string   `json:"task_id"`
@@ -372,7 +373,7 @@ func tagFingerprint(track model.Track) string {
 	// The version prefix invalidates old successful writes if tag mapping changes.
 	track.ID, track.Hash, track.Duration = "", "", 0
 	data, _ := json.Marshal(track)
-	digest := sha256.Sum256(append([]byte("meloport-tags-v1\n"), data...))
+	digest := sha256.Sum256(append([]byte("meloport-tags-v2\n"), data...))
 	return hex.EncodeToString(digest[:])
 }
 
@@ -401,11 +402,18 @@ func fillStoredMetadata(track *model.Track, stored model.Track) {
 	if track.CoverURL == "" {
 		track.CoverURL = stored.CoverURL
 	}
+	if track.Hash == "" {
+		track.Hash = stored.Hash
+	}
+	if track.Duration == 0 {
+		track.Duration = stored.Duration
+	}
 }
 
 func storedTrack(item state.Download) model.Track {
 	track := item.Metadata
 	track.ID = item.TrackID
+	track.Platform = item.Provider
 	if track.Name == "" {
 		track.Name = item.Title
 	}

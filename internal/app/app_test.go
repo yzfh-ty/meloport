@@ -133,6 +133,14 @@ func TestCLIRetagExistingDisabledTaskWithoutKey(t *testing.T) {
 	if err := os.WriteFile(file, audio, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	const lyrics = "[00:00.00]已有歌词"
+	if err := taglib.WriteTags(file, map[string][]string{"LYRICS": {lyrics}}, 0); err != nil {
+		t.Fatal(err)
+	}
+	audio, err = os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
 	store, err := state.Open(cfg.Storage.Database)
 	if err != nil {
 		t.Fatal(err)
@@ -155,6 +163,9 @@ func TestCLIRetagExistingDisabledTaskWithoutKey(t *testing.T) {
 	tags, err := taglib.ReadTags(file)
 	if err != nil || len(tags[taglib.Title]) != 1 || tags[taglib.Title][0] != "本地歌曲" {
 		t.Fatalf("tags %+v; error %v", tags, err)
+	}
+	if len(tags["LYRICS"]) != 1 || tags["LYRICS"][0] != lyrics {
+		t.Fatalf("existing lyrics were not preserved: %q", tags["LYRICS"])
 	}
 	store, err = state.Open(cfg.Storage.Database)
 	if err != nil {
