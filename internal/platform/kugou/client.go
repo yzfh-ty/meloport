@@ -199,7 +199,7 @@ func (c *Client) Ranking(ctx context.Context, id string) (model.Playlist, error)
 	name := ""
 	for page := 1; page <= maxPages; page++ {
 		query := url.Values{"version": {"9108"}, "ranktype": {"1"}, "plat": {"0"}, "pagesize": {"100"}, "area_code": {"1"}, "page": {strconv.Itoa(page)}, "rankid": {id}, "with_res_tag": {"0"}, "show_portrait_mv": {"1"}}
-		value, err := c.request(ctx, http.MethodGet, "https://mobilecdnbj.kugou.com", "/api/v3/rank/song", query, nil, false, false)
+		value, err := c.request(ctx, http.MethodGet, "https://gateway.kugou.com", "/api/v3/rank/song", query, nil, false, false)
 		if err != nil {
 			return model.Playlist{}, err
 		}
@@ -332,6 +332,12 @@ func (c *Client) request(ctx context.Context, method, origin, path string, query
 		uri += "?" + query.Encode()
 	}
 	h := c.headers()
+	if path == "/api/v3/rank/song" {
+		// Route the complete public chart API through Kugou's HTTPS gateway;
+		// the legacy mobile CDN's HTTPS certificate does not match its host.
+		h.Set("X-Router", "mobilecdn.kugou.com")
+		h.Del("Cookie")
+	}
 	// Never send an optional platform cookie over a clear-text endpoint. This
 	// matters for the legacy mobile rank API, which is still HTTP in some regions.
 	if parsed, parseErr := url.Parse(uri); parseErr == nil && parsed.Scheme != "https" {

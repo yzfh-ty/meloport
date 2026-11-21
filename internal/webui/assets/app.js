@@ -740,6 +740,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const task = $('history-task-filter').value;
     const status = $('history-status-filter').value;
     const visible = runs.filter((run) => (!task || run.task_id === task) && (!status || run.status === status));
+    const filteredEmpty = runs.length > 0 && Boolean(task || status);
+    text('history-empty-title', filteredEmpty ? '没有符合筛选条件的记录' : '还没有运行记录');
+    text('history-empty-description', filteredEmpty ? '请调整任务或状态筛选条件后重试。' : '执行一次同步后，会在这里看到结果。');
     text('history-summary', `服务返回最近 ${number(runs.length)} 条记录${task || status ? `，筛选后 ${number(visible.length)} 条` : ''}`);
     show('history-empty', visible.length === 0);
     show('history-table', visible.length > 0);
@@ -859,6 +862,7 @@ document.addEventListener('DOMContentLoaded', () => {
     show('search-results-table', false);
     show('search-pagination', false);
     show('search-source', false);
+    text('search-results-summary', `${platforms[platform]} · “${keyword}” · 正在检索…`);
     try {
       await busyButton($('search-submit'), '正在搜索', async () => {
         const params = new URLSearchParams({ platform, keyword, limit: String(state.search.limit), offset: String(offset) });
@@ -872,7 +876,8 @@ document.addEventListener('DOMContentLoaded', () => {
         renderSearchResults(data.fetched_via);
       });
     } catch (error) {
-      if (error.name !== 'AbortError') { text('search-error', error.message); show('search-error', true); text('search-results-summary', '检索未完成，请调整关键词或稍后重试。'); }
+      text('search-results-summary', `${platforms[platform]} · “${keyword}” · ${error.name === 'AbortError' ? '检索已取消。' : '检索未完成，请调整关键词或稍后重试。'}`);
+      if (error.name !== 'AbortError') { text('search-error', error.message); show('search-error', true); }
     } finally {
       state.search.loading = false;
       state.search.controller = null;

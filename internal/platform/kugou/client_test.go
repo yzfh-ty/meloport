@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -192,6 +193,82 @@ func TestRankingRejectsInvalidSongIdentity(t *testing.T) {
 	client := New(Options{BaseURL: server.URL, HTTP: platform.NewHTTP(server.Client(), time.Second, 0)})
 	if _, err := client.Ranking(context.Background(), "6666"); err == nil {
 		t.Fatal("accepted Kugou ranking song without hash/audio identity")
+	}
+}
+
+func TestRankingPaginationAndCompleteness(t *testing.T) {
+	for _, scenario := range []string{"complete", "empty", "changed total", "duplicate track", "truncated"} {
+		t.Run(scenario, func(t *testing.T) {
+			calls := 0
+			client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.URL.Path != "/api/v3/rank/song" || r.URL.Query().Get("rankid") != "8888" || r.Header.Get("Cookie") != "" {
+					t.Errorf("unexpected native mobile request %s", r.URL.Path)
+				}
+				page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+				if page != calls || page > 2 {
+					t.Fatalf("unexpected pagination %d after %d calls", page, calls)
+				}
+				row := func(n int) any {
+					return map[string]any{"hash": hashFor(n), "songname": "Song", "author_name": "Singer", "duration": 180}
+				}
+
+				songs := map[string]any{"total": 3, "page": page, "pagesize": 2, "list": []any{row(1), row(2)}}
+				if page == 2 {
+					songs["list"] = []any{row(3)}
+					switch scenario {
+					case "changed total":
+						songs["total"] = 4
+					case "duplicate track":
+						songs["list"] = []any{row(1)}
+					case "truncated":
+						songs["list"] = []any{}
+					}
+				}
+				if scenario == "empty" {
+					songs["total"] = 0
+					songs["list"] = []any{}
+				}
+
+				jsonReply(t, w, map[string]any{"status": 1, "data": map[string]any{"rankname": "TOP500", "total": songs["total"], "info": songs["list"]}})
+			})
+			playlist, err := client.Ranking(context.Background(), "8888")
+			if scenario == "complete" {
+				if err != nil || len(playlist.Tracks) != 3 || playlist.ReportedCount != 3 || calls != 2 || playlist.Tracks[2].Hash != hashFor(3) {
+					t.Fatalf("incomplete native chart: %+v, calls=%d, error=%v", playlist, calls, err)
+				}
+			} else if scenario == "empty" {
+				if err != nil || len(playlist.Tracks) != 0 || playlist.ReportedCount != 0 || calls != 1 {
+					t.Fatalf("valid empty chart rejected: %+v %v", playlist, err)
+				}
+			} else if err == nil {
+				t.Fatal("accepted inconsistent native chart")
+			}
+		})
+	}
+}
+
+type rankingTransportFunc func(*http.Request) (*http.Response, error)
+
+func (f rankingTransportFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestRankingUsesHTTPSGatewayWithoutCookie(t *testing.T) {
+	transport := rankingTransportFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Scheme != "https" || r.URL.Host != "gateway.kugou.com" || r.URL.Path != "/api/v3/rank/song" {
+			t.Fatalf("unexpected ranking gateway: %s", r.URL.Redacted())
+		}
+		if r.Header.Get("X-Router") != "mobilecdn.kugou.com" || r.Header.Get("Cookie") != "" {
+			t.Fatal("ranking gateway needs native routing and no platform cookie")
+		}
+		if r.URL.Query().Get("rankid") != "8888" || r.URL.Query().Get("pagesize") != "100" {
+			t.Fatal("native chart identity or page size changed")
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"status":1,"data":{"total":0,"info":[]}}`))}, nil
+	})
+	client := New(Options{Cookie: "fixture-cookie", HTTP: platform.NewHTTP(&http.Client{Transport: transport}, time.Second, 0)})
+	playlist, err := client.Ranking(context.Background(), "8888")
+	if err != nil || playlist.ReportedCount != 0 || len(playlist.Tracks) != 0 {
+		t.Fatalf("empty chart: %+v %v", playlist, err)
 	}
 }
 
