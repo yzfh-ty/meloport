@@ -175,7 +175,11 @@ func (c *Client) Playlist(ctx context.Context, id string) (model.Playlist, error
 				track.Album = album
 			case map[string]any:
 				track.Album = textField(album, "name", "title")
+				track.CoverURL = c.coverURL(textField(album, "picUrl"))
 			}
+		}
+		if track.CoverURL == "" {
+			track.CoverURL = c.coverURL(textField(trackObj, "cover"))
 		}
 		playlist.Tracks = append(playlist.Tracks, track)
 	}

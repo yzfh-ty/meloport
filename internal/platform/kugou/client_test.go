@@ -19,6 +19,26 @@ import (
 
 func hashFor(index int) string { return fmt.Sprintf("%032x", index+1) }
 
+func TestSongCoverFromNativeKugouMetadata(t *testing.T) {
+	const templated = "http://imge.kugou.com/stdmusic/{size}/album.jpg"
+	const expected = "https://imge.kugou.com/stdmusic/800/album.jpg"
+	detail := map[string]any{
+		"songname": "Song", "author_name": "Singer",
+		"img":        "https://imge.kugou.com/unsafe.jpg?token=nonpublic",
+		"album_info": map[string]any{"album_name": "Album", "sizable_cover": templated, "author_name": "Album Artist", "publish_date": "2024-01-02"},
+		"audio_info": map[string]any{"hash": hashFor(1)},
+	}
+	track, err := detailTrack(detail)
+	if err != nil || track.CoverURL != expected || track.Year != "2024" || len(track.AlbumArtists) != 1 || track.AlbumArtists[0] != "Album Artist" {
+		t.Fatalf("unexpected native Kugou album tags: %+v, %v", track, err)
+	}
+	ranking := map[string]any{"hash": hashFor(1), "songname": "Song", "author_name": "Singer", "trans_param": map[string]any{"union_cover": templated}}
+	track, err = rankingTrack(ranking)
+	if err != nil || track.CoverURL != expected {
+		t.Fatalf("unexpected native Kugou ranking cover: %+v, %v", track, err)
+	}
+}
+
 func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
 	t.Helper()
 	server := httptest.NewServer(handler)

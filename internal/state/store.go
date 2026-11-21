@@ -13,26 +13,31 @@ import (
 	"strings"
 	"time"
 
+	"meloport/internal/model"
+
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 1
+const schemaVersion = 2
 
 type Store struct {
 	db *sql.DB
 }
 
 type Download struct {
-	TaskID    string    `json:"task_id"`
-	Provider  string    `json:"provider"`
-	TrackID   string    `json:"track_id"`
-	Path      string    `json:"path"`
-	Size      int64     `json:"size"`
-	SHA256    string    `json:"sha256"`
-	Title     string    `json:"title"`
-	Artists   []string  `json:"artists"`
-	Album     string    `json:"album"`
-	UpdatedAt time.Time `json:"updated_at"`
+	TaskID         string      `json:"task_id"`
+	Provider       string      `json:"provider"`
+	TrackID        string      `json:"track_id"`
+	Path           string      `json:"path"`
+	Size           int64       `json:"size"`
+	SHA256         string      `json:"sha256"`
+	Title          string      `json:"title"`
+	Artists        []string    `json:"artists"`
+	Album          string      `json:"album"`
+	Metadata       model.Track `json:"metadata"`
+	TagFingerprint string      `json:"tag_fingerprint,omitempty"`
+	TagPending     bool        `json:"tag_pending,omitempty"`
+	UpdatedAt      time.Time   `json:"updated_at"`
 }
 
 type Run struct {
@@ -156,9 +161,22 @@ func (s *Store) migrate(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS runs_task_id_id ON runs(task_id, id DESC)`,
 		`PRAGMA user_version = 1`,
 	}
-	for _, statement := range statements {
+	if version == 0 {
+		for _, statement := range statements {
+			if _, err := tx.ExecContext(ctx, statement); err != nil {
+				return fmt.Errorf("migrate database: %w", err)
+			}
+		}
+	}
+	for _, statement := range []string{
+		`ALTER TABLE downloads ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'`,
+		`ALTER TABLE downloads ADD COLUMN tag_fingerprint TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE downloads ADD COLUMN tag_pending INTEGER NOT NULL DEFAULT 0`,
+		`CREATE INDEX IF NOT EXISTS downloads_path ON downloads(path)`,
+		`PRAGMA user_version = 2`,
+	} {
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf("migrate database: %w", err)
+			return fmt.Errorf("migrate audio tag state: %w", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -182,51 +200,153 @@ func (s *Store) RecoverInterrupted(ctx context.Context) error {
 	return nil
 }
 
-func (s *Store) GetDownload(ctx context.Context, taskID, provider, trackID string) (Download, bool, error) {
+const downloadColumns = `task_id, provider, track_id, path, size, sha256, title, artists, album, updated_at, metadata, tag_fingerprint, tag_pending`
+
+type rowScanner interface{ Scan(...any) error }
+
+func scanDownload(row rowScanner) (Download, error) {
 	var item Download
-	var artists, updated string
-	err := s.db.QueryRowContext(ctx, `SELECT task_id, provider, track_id, path, size, sha256, title, artists, album, updated_at
-		FROM downloads WHERE task_id = ? AND provider = ? AND track_id = ?`, taskID, provider, trackID).
-		Scan(&item.TaskID, &item.Provider, &item.TrackID, &item.Path, &item.Size, &item.SHA256, &item.Title, &artists, &item.Album, &updated)
+	var artists, metadata, updated string
+	err := row.Scan(&item.TaskID, &item.Provider, &item.TrackID, &item.Path, &item.Size, &item.SHA256, &item.Title, &artists, &item.Album, &updated, &metadata, &item.TagFingerprint, &item.TagPending)
+	if err != nil {
+		return Download{}, fmt.Errorf("read download record: %w", err)
+	}
+	if err := json.Unmarshal([]byte(artists), &item.Artists); err != nil {
+		return Download{}, fmt.Errorf("decode stored artists: %w", err)
+	}
+	if err := json.Unmarshal([]byte(metadata), &item.Metadata); err != nil {
+		return Download{}, fmt.Errorf("decode stored tag metadata: %w", err)
+	}
+	item.UpdatedAt, err = time.Parse(time.RFC3339Nano, updated)
+	if err != nil {
+		return Download{}, fmt.Errorf("decode download timestamp: %w", err)
+	}
+	return item, nil
+}
+
+func (s *Store) GetDownload(ctx context.Context, taskID, provider, trackID string) (Download, bool, error) {
+	item, err := scanDownload(s.db.QueryRowContext(ctx, `SELECT `+downloadColumns+`
+		FROM downloads WHERE task_id = ? AND provider = ? AND track_id = ?`, taskID, provider, trackID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Download{}, false, nil
 	}
 	if err != nil {
-		return Download{}, false, fmt.Errorf("read download record: %w", err)
-	}
-	if err := json.Unmarshal([]byte(artists), &item.Artists); err != nil {
-		return Download{}, false, fmt.Errorf("decode stored artists: %w", err)
-	}
-	item.UpdatedAt, err = time.Parse(time.RFC3339Nano, updated)
-	if err != nil {
-		return Download{}, false, fmt.Errorf("decode download timestamp: %w", err)
+		return Download{}, false, err
 	}
 	return item, true, nil
 }
 
 func (s *Store) SaveDownload(ctx context.Context, item Download) error {
+	return saveDownload(ctx, s.db, item)
+}
+
+type execer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func saveDownload(ctx context.Context, db execer, item Download) error {
 	if item.TaskID == "" || item.Provider == "" || item.TrackID == "" || item.Path == "" || item.Size <= 0 {
 		return errors.New("download record is incomplete")
 	}
+	item.Metadata.CoverURL = model.CanonicalCoverURL(item.Metadata.CoverURL)
 	artists, err := json.Marshal(item.Artists)
 	if err != nil {
 		return fmt.Errorf("encode artists: %w", err)
 	}
+	metadata, err := json.Marshal(item.Metadata)
+	if err != nil {
+		return fmt.Errorf("encode tag metadata: %w", err)
+	}
 	if item.UpdatedAt.IsZero() {
 		item.UpdatedAt = time.Now().UTC()
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO downloads
-		(task_id, provider, track_id, path, size, sha256, title, artists, album, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err = db.ExecContext(ctx, `INSERT INTO downloads
+		(task_id, provider, track_id, path, size, sha256, title, artists, album, updated_at, metadata, tag_fingerprint, tag_pending)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(task_id, provider, track_id) DO UPDATE SET
 		path = excluded.path, size = excluded.size, sha256 = excluded.sha256, title = excluded.title,
-		artists = excluded.artists, album = excluded.album, updated_at = excluded.updated_at`,
+		artists = excluded.artists, album = excluded.album, updated_at = excluded.updated_at,
+		metadata = excluded.metadata, tag_fingerprint = excluded.tag_fingerprint, tag_pending = excluded.tag_pending`,
 		item.TaskID, item.Provider, item.TrackID, item.Path, item.Size, item.SHA256, item.Title,
-		string(artists), item.Album, item.UpdatedAt.UTC().Format(time.RFC3339Nano))
+		string(artists), item.Album, item.UpdatedAt.UTC().Format(time.RFC3339Nano), string(metadata), item.TagFingerprint, item.TagPending)
 	if err != nil {
 		return fmt.Errorf("save download record: %w", err)
 	}
 	return nil
+}
+
+// CancelTag clears an update marker when the tagger left the original intact.
+func (s *Store) CancelTag(ctx context.Context, item Download) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE downloads SET tag_pending = 0
+		WHERE path = ? AND size = ? AND sha256 = ?`, item.Path, item.Size, item.SHA256)
+	if err != nil {
+		return fmt.Errorf("clear pending audio tag update: %w", err)
+	}
+	return nil
+}
+
+// BeginTag durably marks a metadata update before its file changes.
+// If the process or final database save fails, the next run retries tagging
+// rather than treating the changed byte size as a damaged audio download.
+func (s *Store) BeginTag(ctx context.Context, item Download) error {
+	result, err := s.db.ExecContext(ctx, `UPDATE downloads SET tag_pending = 1
+		WHERE path = ? AND size = ? AND sha256 = ? AND EXISTS (
+			SELECT 1 FROM downloads WHERE task_id = ? AND provider = ? AND track_id = ? AND path = ? AND size = ? AND sha256 = ?
+		)`, item.Path, item.Size, item.SHA256, item.TaskID, item.Provider, item.TrackID, item.Path, item.Size, item.SHA256)
+	if err != nil {
+		return fmt.Errorf("record pending audio tag update: %w", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil || count == 0 {
+		return errors.New("audio tag record no longer matches the file")
+	}
+	return nil
+}
+
+// FinishTag publishes the resulting file identity to all records that tracked
+// the same original bytes at the same path, including records left by a task
+// that was removed. Each of those records keeps its own song metadata.
+func (s *Store) FinishTag(ctx context.Context, before, after Download) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin audio tag state update: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE downloads SET size = ?, sha256 = ?, tag_pending = 0,
+		tag_fingerprint = CASE WHEN sha256 <> ? THEN '' ELSE tag_fingerprint END
+		WHERE path = ? AND size = ? AND sha256 = ? AND tag_pending = 1`,
+		after.Size, after.SHA256, after.SHA256, before.Path, before.Size, before.SHA256); err != nil {
+		return fmt.Errorf("update audio tag file identity: %w", err)
+	}
+	if err := saveDownload(ctx, tx, after); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit audio tag state update: %w", err)
+	}
+	return nil
+}
+
+// ListDownloads returns durable local records, including songs no longer in a
+// remote playlist. Closing rows before returning permits subsequent updates.
+func (s *Store) ListDownloads(ctx context.Context, taskID, provider string) ([]Download, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+downloadColumns+` FROM downloads WHERE task_id = ? AND provider = ? ORDER BY track_id`, taskID, provider)
+	if err != nil {
+		return nil, fmt.Errorf("list downloaded tracks: %w", err)
+	}
+	defer rows.Close()
+	var items []Download
+	for rows.Next() {
+		item, err := scanDownload(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate downloaded tracks: %w", err)
+	}
+	return items, nil
 }
 
 func (s *Store) StartRun(ctx context.Context, taskID string) (int64, error) {

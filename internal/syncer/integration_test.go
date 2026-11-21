@@ -3,13 +3,18 @@ package syncer_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync/atomic"
 	"testing"
+
+	"go.senan.xyz/taglib"
 
 	"meloport/internal/chksz"
 	"meloport/internal/download"
@@ -96,12 +101,58 @@ func TestFixtureAPIToAudioToSQLiteAndRestart(t *testing.T) {
 	if err != nil || third.Skipped != 1 || third.Downloaded != 1 || audioCalls.Load() != 3 {
 		t.Fatalf("repair %+v err=%v audio=%d", third, err, audioCalls.Load())
 	}
-	data, err := os.ReadFile(filepath.Join(task.Directory, "netease-1002.flac"))
-	if err != nil || !bytes.Equal(data, payload) {
-		t.Fatalf("download bytes did not survive full path: len=%d err=%v", len(data), err)
+	item, found, err := store.GetDownload(context.Background(), task.ID, "netease", "1002")
+	if err != nil || !found {
+		t.Fatalf("missing repaired download record: %+v %v", item, err)
 	}
+	assertTaggedFLAC(t, payload, item, map[string][]string{taglib.Title: {"Two"}})
 	runs, err := store.LatestRuns(context.Background(), 3)
 	if err != nil || len(runs) != 3 || runs[0].Downloaded != 1 || runs[1].Skipped != 2 {
 		t.Fatalf("run history %+v err=%v", runs, err)
 	}
+}
+
+func assertTaggedFLAC(t *testing.T, source []byte, item state.Download, metadata map[string][]string) {
+	t.Helper()
+	data, err := os.ReadFile(item.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(flacAudioPayload(t, source), flacAudioPayload(t, data)) {
+		t.Fatalf("tagging changed FLAC audio payload at %s", item.Path)
+	}
+	hash := sha256.Sum256(data)
+	if item.Size != int64(len(data)) || item.SHA256 != hex.EncodeToString(hash[:]) || item.TagFingerprint == "" {
+		t.Fatalf("database did not record tagged file: %+v", item)
+	}
+	tags, err := taglib.ReadTags(item.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range metadata {
+		if !slices.Equal(tags[key], want) {
+			t.Errorf("FLAC tag %s = %q, want %q", key, tags[key], want)
+		}
+	}
+}
+
+func flacAudioPayload(t *testing.T, data []byte) []byte {
+	t.Helper()
+	if !bytes.HasPrefix(data, []byte("fLaC")) {
+		t.Fatal("missing FLAC signature")
+	}
+	data = data[4:]
+	for len(data) >= 4 {
+		last := data[0]&0x80 != 0
+		length := int(data[1])<<16 | int(data[2])<<8 | int(data[3])
+		if len(data) < 4+length {
+			break
+		}
+		data = data[4+length:]
+		if last {
+			return data
+		}
+	}
+	t.Fatal("invalid FLAC metadata blocks")
+	return nil
 }

@@ -63,6 +63,24 @@ func TestResolvePlatformRejectsInvalidInputsBeforeHTTP(t *testing.T) {
 	}
 }
 
+func TestDecodeAudioOnlyKeepsPublicPlatformCover(t *testing.T) {
+	client := &Client{key: testKey}
+	for _, tc := range []struct{ cover, want string }{
+		{"http://y.gtimg.cn/music/photo_new/album.jpg", "https://y.gtimg.cn/music/photo_new/album.jpg"},
+		{"https://imge.kugou.com/stdmusic/800/album.jpg", "https://imge.kugou.com/stdmusic/800/album.jpg"},
+		{"https://p2.music.126.net/album.jpg?token=nonpublic", ""},
+		{"https://y.gtimg.cn/" + testKey + "/album.jpg", ""},
+		{"https://y.gtimg.cn.evil.test/album.jpg", ""},
+		{"https://y.gtimg.cn:8443/album.jpg", ""},
+		{"http://127.0.0.1/album.jpg", ""},
+	} {
+		result, err := client.decodeAudio(map[string]any{"url": "https://audio.example/song.flac", "cover": tc.cover})
+		if err != nil || result.CoverURL != tc.want {
+			t.Fatalf("unexpected normalized cover: %q (want %q), %v", result.CoverURL, tc.want, err)
+		}
+	}
+}
+
 func TestResolvePlatformURLAndSizeSafety(t *testing.T) {
 	for name, object := range map[string]map[string]any{
 		"missing URL":          {},

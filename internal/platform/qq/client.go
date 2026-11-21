@@ -546,6 +546,23 @@ func decodeTrack(raw any) (model.Track, error) {
 		return empty, errors.New("QQ platform returned no valid string song MID")
 	}
 	track := model.Track{ID: mid, Name: platform.Text(obj, "title", "name"), Artists: platform.Artists(obj["singer"]), Album: platform.Text(platform.Object(obj["album"]), "name")}
+	album := platform.Object(obj["album"])
+	track.CoverURL = model.CanonicalCoverURL(platform.Text(album, "picUrl", "cover_url"))
+	// QQ's album MID is distinct from the song MID. Never use the latter
+	// for the platform's album-cover address.
+	if albumMID := platform.Text(album, "mid"); track.CoverURL == "" && midPattern.MatchString(albumMID) {
+		track.CoverURL = "https://y.gtimg.cn/music/photo_new/T002R800x800M000" + albumMID + ".jpg"
+	}
+	track.AlbumArtists = platform.Artists(album["singer"])
+	if n, ok := platform.Integer(obj["index_album"]); ok && n > 0 && n < 10000 {
+		track.TrackNumber = int(n)
+	}
+	if n, ok := platform.Integer(obj["index_cd"]); ok && n > 0 && n < 10000 {
+		track.DiscNumber = int(n)
+	}
+	if date, err := time.Parse("2006-01-02", platform.Text(obj, "time_public")); err == nil && date.Year() >= 1900 && date.Year() <= 2100 {
+		track.Year = date.Format("2006")
+	}
 	if rawDuration, found := obj["interval"]; found {
 		seconds, ok := platform.Integer(rawDuration)
 		if !ok || seconds < 0 || seconds > 10000000 {

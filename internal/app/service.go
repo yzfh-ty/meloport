@@ -116,6 +116,9 @@ func (q *taskQueue) work(ctx context.Context, engine runner, logger *slog.Logger
 			logger.Info("sync started", "task", task.ID)
 			summary, err := engine.Run(ctx, task.Model())
 			q.complete(task.ID)
+			if len(summary.TagWarnings) > 0 {
+				logger.Warn("audio metadata incomplete", "task", task.ID, "warnings", summary.TagWarnings)
+			}
 			if err != nil {
 				logger.Error("sync finished", "task", task.ID, "status", summary.Status, "downloaded", summary.Downloaded, "skipped", summary.Skipped, "error", err.Error())
 				if chksz.IsAccountError(err) {

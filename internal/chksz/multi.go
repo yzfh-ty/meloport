@@ -75,6 +75,7 @@ func (c *Client) decodeAudio(obj map[string]any) (model.ResolvedTrack, error) {
 		}
 	}
 	result := model.ResolvedTrack{URL: u.String(), Format: format}
+	result.CoverURL = c.coverURL(textField(obj, "cover"))
 	if rawSize, ok := first(obj, "size", "filesize", "fileSize"); ok {
 		size, valid := integer(rawSize)
 		if !valid || size < 0 {
@@ -83,6 +84,18 @@ func (c *Client) decodeAudio(obj map[string]any) (model.ResolvedTrack, error) {
 		result.Size = size
 	}
 	return result, nil
+}
+
+func (c *Client) coverURL(raw string) string {
+	if raw == "" || c.containsKey(raw) {
+		return ""
+	}
+	cover := model.CanonicalCoverURL(raw)
+	u, err := url.Parse(cover)
+	if err != nil || c.containsKey(u.Path) {
+		return ""
+	}
+	return cover
 }
 
 // Search is a metadata fallback. Native sources should be attempted first.
@@ -169,7 +182,11 @@ func (c *Client) Search(ctx context.Context, source, keyword string, limit, offs
 				track.Album = str
 			} else if album, ok := value.(map[string]any); ok {
 				track.Album = textField(album, "name", "title")
+				track.CoverURL = c.coverURL(textField(album, "picUrl"))
 			}
+		}
+		if track.CoverURL == "" {
+			track.CoverURL = c.coverURL(textField(obj, "cover"))
 		}
 		if value, ok := first(obj, "duration", "interval", "dt"); ok {
 			if duration, valid := integer(value); valid && duration >= 0 && duration < 1000000000 {

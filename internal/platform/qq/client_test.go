@@ -26,6 +26,21 @@ func testTrack(n int) map[string]any {
 	return map[string]any{"id": n + 10000, "mid": fmt.Sprintf("MID%06d", n), "title": fmt.Sprintf("Song %d", n), "singer": []any{map[string]any{"name": "Artist"}}, "album": map[string]any{"name": "Album"}, "interval": 180}
 }
 
+func TestDecodeTrackUsesAlbumMIDForCover(t *testing.T) {
+	item := testTrack(1)
+	item["album"] = map[string]any{"name": "Album", "mid": "004AlbumMID", "singer": []any{map[string]any{"name": "Album Artist"}}}
+	item["index_album"], item["index_cd"], item["time_public"] = 7, 2, "2024-02-29"
+	track, err := decodeTrack(item)
+	if err != nil || track.CoverURL != "https://y.gtimg.cn/music/photo_new/T002R800x800M000004AlbumMID.jpg" || track.TrackNumber != 7 || track.DiscNumber != 2 || track.Year != "2024" || len(track.AlbumArtists) != 1 || track.AlbumArtists[0] != "Album Artist" {
+		t.Fatalf("unexpected native QQ album tags: %+v, %v", track, err)
+	}
+	item["album"] = map[string]any{"name": "Album", "mid": "../other", "cover_url": "https://y.gtimg.cn/album.jpg?token=nonpublic"}
+	track, err = decodeTrack(item)
+	if err != nil || track.CoverURL != "" || len(track.AlbumArtists) > 0 {
+		t.Fatalf("invented QQ cover or album artist: %+v, %v", track, err)
+	}
+}
+
 func playlistJSON(w http.ResponseWriter, total int, items []any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "req_1": map[string]any{"code": 0, "data": map[string]any{"total_song_num": total, "songlist": items, "dirinfo": map[string]any{"title": "My playlist"}}}})

@@ -361,8 +361,23 @@ func parseTrack(raw any) (model.Track, error) {
 	for _, key := range []string{"al", "album"} {
 		if album, ok := object[key].(map[string]any); ok {
 			track.Album = text(album, "name")
+			track.CoverURL = model.CanonicalCoverURL(text(album, "picUrl"))
+			track.AlbumArtists = platform.Artists(album["artists"])
+			if len(track.AlbumArtists) == 0 {
+				track.AlbumArtists = platform.Artists(album["artist"])
+			}
+			track.Year = publicationYear(album["publishTime"])
 			break
 		}
+	}
+	if n, ok := integer(object["no"]); ok && n > 0 && n < 10000 {
+		track.TrackNumber = int(n)
+	}
+	if n, ok := integer(object["cd"]); ok && n > 0 && n < 10000 {
+		track.DiscNumber = int(n)
+	}
+	if year := publicationYear(object["publishTime"]); year != "" {
+		track.Year = year
 	}
 	if cloud, ok := object["pc"].(map[string]any); ok {
 		if title := text(cloud, "sn"); title != "" {
@@ -376,6 +391,20 @@ func parseTrack(raw any) (model.Track, error) {
 		}
 	}
 	return track, nil
+}
+
+func publicationYear(value any) string {
+	ms, ok := integer(value)
+	if !ok || ms <= 0 {
+		return ""
+	}
+	// Native publishTime represents the platform's China-local release date;
+	// using UTC can incorrectly put a January 1 release in the previous year.
+	year := time.UnixMilli(ms).In(time.FixedZone("Asia/Shanghai", 8*60*60)).Year()
+	if year < 1900 || year > 2100 {
+		return ""
+	}
+	return strconv.Itoa(year)
 }
 
 func validID(value string) bool {

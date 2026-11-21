@@ -1,7 +1,7 @@
 #requires -Version 5.1
 [CmdletBinding()]
 param(
-    [ValidateSet('build', 'test', 'dev', 'validate', 'sync', 'serve', 'status')]
+    [ValidateSet('build', 'test', 'dev', 'validate', 'sync', 'retag', 'serve', 'status')]
     [string]$Action = 'validate',
     [string]$Config = 'config.yaml',
     [string]$Task = ''
@@ -53,7 +53,7 @@ try {
     if ($Action -eq 'build') { return }
     $applicationArguments = @($Action, '-config', $Config)
     if ($Task) {
-        if ($Action -ne 'sync') { throw '-Task is supported only with -Action sync' }
+        if ($Action -notin @('sync', 'retag')) { throw '-Task is supported only with -Action sync or retag' }
         $applicationArguments += @('-task', $Task)
     }
     & $binary @applicationArguments

@@ -3,6 +3,9 @@ package syncer
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -25,6 +28,12 @@ type Provider interface {
 
 type Downloader interface {
 	Download(context.Context, model.ResolvedTrack, string, string) (model.DownloadResult, error)
+}
+
+// Tagger updates metadata locally and reports the final file size and digest.
+// Implementations must leave the original audio intact when an update fails.
+type Tagger interface {
+	Tag(context.Context, model.Track, string) (model.DownloadResult, error)
 }
 
 type PlaylistReader interface {
@@ -82,6 +91,7 @@ type Summary struct {
 	Skipped        int       `json:"skipped"`
 	Failed         int       `json:"failed"`
 	Pending        int       `json:"pending"`
+	TagWarnings    []string  `json:"tag_warnings,omitempty"`
 	Error          string    `json:"error,omitempty"`
 	StartedAt      time.Time `json:"started_at"`
 	FinishedAt     time.Time `json:"finished_at"`
@@ -196,6 +206,7 @@ func (e *Engine) Run(ctx context.Context, task model.Task) (summary Summary, ret
 		addIssue(fmt.Sprintf("playlist is incomplete: expected %d tracks, received %d", playlist.ReportedCount, len(playlist.Tracks)))
 	}
 	for _, track := range tracks {
+		track.CoverURL = model.CanonicalCoverURL(track.CoverURL)
 		if err := ctx.Err(); err != nil {
 			return summary, err
 		}
@@ -209,12 +220,28 @@ func (e *Engine) Run(ctx context.Context, task model.Task) (summary Summary, ret
 		if err != nil {
 			return summary, err
 		}
-		if found && completeFile(stored, directory) {
+		if found && (completeFile(stored, directory) || stored.TagPending && localFile(stored.Path, directory)) {
+			fillStoredMetadata(&track, storedTrack(stored))
+			_, warning, err := e.tagExisting(ctx, stored, track, false)
+			if err != nil {
+				if ctx.Err() != nil {
+					return summary, ctx.Err()
+				}
+				summary.Failed++
+				summary.Pending--
+				addIssue(fmt.Sprintf("track %s metadata: %v", track.ID, err))
+				continue
+			}
+			addTagWarning(&summary.TagWarnings, track.ID, warning)
 			summary.Skipped++
 			summary.Pending--
 			continue
 		}
 		audio, err := e.resolver.Resolve(ctx, providerName, track, task.Quality)
+		if track.CoverURL == "" {
+			track.CoverURL = model.CanonicalCoverURL(audio.CoverURL)
+		}
+		audio.Track = track
 		if err == nil && found {
 			err = quarantineIncompleteFile(stored, directory)
 		}
@@ -222,10 +249,16 @@ func (e *Engine) Run(ctx context.Context, task model.Task) (summary Summary, ret
 			var result model.DownloadResult
 			result, err = e.downloader.Download(ctx, audio, directory, providerName+"-"+track.ID)
 			if err == nil {
+				fingerprint := ""
+				if result.TagsComplete {
+					fingerprint = tagFingerprint(track)
+				}
+				addTagWarning(&summary.TagWarnings, track.ID, result.TagWarning)
 				err = e.store.SaveDownload(ctx, state.Download{
 					TaskID: task.ID, Provider: providerName, TrackID: track.ID,
 					Path: result.Path, Size: result.Size, SHA256: result.SHA256,
 					Title: track.Name, Artists: track.Artists, Album: track.Album,
+					Metadata: track, TagFingerprint: fingerprint,
 				})
 				if err != nil {
 					return summary, err
@@ -258,6 +291,187 @@ func (e *Engine) Run(ctx context.Context, task model.Task) (summary Summary, ret
 		return summary, errors.New(strings.Join(issues, "; "))
 	}
 	return summary, nil
+}
+
+// RetagSummary describes an explicit local-only metadata repair. Audio is never
+// resolved or downloaded, even when a local file is missing or invalid.
+type RetagSummary struct {
+	TaskID      string   `json:"task_id"`
+	Total       int      `json:"total"`
+	Tagged      int      `json:"tagged"`
+	Skipped     int      `json:"skipped"`
+	Failed      int      `json:"failed"`
+	TagWarnings []string `json:"tag_warnings,omitempty"`
+}
+
+func (e *Engine) Retag(ctx context.Context, task model.Task) (RetagSummary, error) {
+	summary := RetagSummary{TaskID: task.ID}
+	if _, ok := e.downloader.(Tagger); !ok {
+		return summary, errors.New("local audio tagging is unavailable")
+	}
+	select {
+	case e.permit <- struct{}{}:
+		defer func() { <-e.permit }()
+	case <-ctx.Done():
+		return summary, ctx.Err()
+	}
+	providerName := task.Platform
+	if providerName == "" {
+		providerName = "netease"
+	}
+	directory, err := filepath.Abs(task.Directory)
+	if err != nil {
+		return summary, errors.New("cannot resolve local tagging directory")
+	}
+	items, err := e.store.ListDownloads(ctx, task.ID, providerName)
+	if err != nil {
+		return summary, err
+	}
+	summary.Total = len(items)
+	var issues []string
+	for _, item := range items {
+		if err := ctx.Err(); err != nil {
+			return summary, err
+		}
+		if !completeFile(item, directory) && !(item.TagPending && localFile(item.Path, directory)) {
+			summary.Failed++
+			if len(issues) < 5 {
+				issues = append(issues, fmt.Sprintf("track %s is missing, changed, or outside the task directory; audio was not downloaded", item.TrackID))
+			}
+			continue
+		}
+		track := storedTrack(item)
+		changed, warning, err := e.tagExisting(ctx, item, track, true)
+		if err != nil {
+			if ctx.Err() != nil {
+				return summary, ctx.Err()
+			}
+			summary.Failed++
+			if len(issues) < 5 {
+				issues = append(issues, fmt.Sprintf("track %s metadata: %v", item.TrackID, err))
+			}
+			continue
+		}
+		addTagWarning(&summary.TagWarnings, item.TrackID, warning)
+		if changed {
+			summary.Tagged++
+		} else {
+			summary.Skipped++
+		}
+	}
+	if summary.Failed > len(issues) {
+		issues = append(issues, fmt.Sprintf("and %d more errors", summary.Failed-len(issues)))
+	}
+	if len(issues) > 0 {
+		return summary, errors.New(strings.Join(issues, "; "))
+	}
+	return summary, nil
+}
+
+func tagFingerprint(track model.Track) string {
+	// The version prefix invalidates old successful writes if tag mapping changes.
+	track.ID, track.Hash, track.Duration = "", "", 0
+	data, _ := json.Marshal(track)
+	digest := sha256.Sum256(append([]byte("meloport-tags-v1\n"), data...))
+	return hex.EncodeToString(digest[:])
+}
+
+func fillStoredMetadata(track *model.Track, stored model.Track) {
+	if track.Name == "" {
+		track.Name = stored.Name
+	}
+	if len(track.Artists) == 0 {
+		track.Artists = stored.Artists
+	}
+	if track.Album == "" {
+		track.Album = stored.Album
+	}
+	if len(track.AlbumArtists) == 0 {
+		track.AlbumArtists = stored.AlbumArtists
+	}
+	if track.TrackNumber == 0 {
+		track.TrackNumber = stored.TrackNumber
+	}
+	if track.DiscNumber == 0 {
+		track.DiscNumber = stored.DiscNumber
+	}
+	if track.Year == "" {
+		track.Year = stored.Year
+	}
+	if track.CoverURL == "" {
+		track.CoverURL = stored.CoverURL
+	}
+}
+
+func storedTrack(item state.Download) model.Track {
+	track := item.Metadata
+	track.ID = item.TrackID
+	if track.Name == "" {
+		track.Name = item.Title
+	}
+	if len(track.Artists) == 0 {
+		track.Artists = item.Artists
+	}
+	if track.Album == "" {
+		track.Album = item.Album
+	}
+	track.CoverURL = model.CanonicalCoverURL(track.CoverURL)
+	return track
+}
+
+func addTagWarning(warnings *[]string, trackID, message string) {
+	if message != "" && len(*warnings) < 5 {
+		*warnings = append(*warnings, bounded(fmt.Sprintf("track %s metadata: %s", trackID, message), 600))
+	}
+}
+
+func (e *Engine) tagExisting(ctx context.Context, item state.Download, track model.Track, force bool) (bool, string, error) {
+	tagger, ok := e.downloader.(Tagger)
+	if !ok {
+		if item.TagPending {
+			return false, "", errors.New("unfinished metadata update requires a local tagger")
+		}
+		return false, "", nil
+	}
+	fingerprint := tagFingerprint(track)
+	if !force && !item.TagPending && item.TagFingerprint == fingerprint {
+		return false, "", nil
+	}
+	if err := e.store.BeginTag(ctx, item); err != nil {
+		return false, "", err
+	}
+	result, err := tagger.Tag(ctx, track, item.Path)
+	if err != nil {
+		// A failed tag write leaves the original intact. Preserve a marker from
+		// an interrupted prior attempt, since its recorded size may be stale.
+		if !item.TagPending {
+			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			err = errors.Join(err, e.store.CancelTag(cleanup, item))
+		}
+		return false, "", err
+	}
+	if filepath.Clean(result.Path) != filepath.Clean(item.Path) || result.Size <= 0 || result.SHA256 == "" || !result.TagsComplete {
+		return false, "", errors.New("tag writer returned an invalid completed file")
+	}
+	changed := result.Size != item.Size || result.SHA256 != item.SHA256
+	before := item
+	item.Path, item.Size, item.SHA256 = result.Path, result.Size, result.SHA256
+	item.Title, item.Artists, item.Album = track.Name, track.Artists, track.Album
+	item.Metadata, item.TagFingerprint, item.TagPending = track, fingerprint, false
+	item.UpdatedAt = time.Now().UTC()
+	if err := e.store.FinishTag(ctx, before, item); err != nil {
+		return false, "", err
+	}
+	return changed, result.TagWarning, nil
+}
+
+func localFile(path, directory string) bool {
+	if !filepath.IsAbs(path) || filepath.Clean(filepath.Dir(path)) != filepath.Clean(directory) {
+		return false
+	}
+	info, err := os.Lstat(path)
+	return err == nil && info.Mode().IsRegular() && info.Size() > 0
 }
 
 func uniqueTracks(tracks []model.Track) []model.Track {

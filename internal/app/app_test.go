@@ -3,6 +3,9 @@ package app
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +13,10 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
+	"go.senan.xyz/taglib"
+	"meloport/internal/config"
+	"meloport/internal/state"
+	"meloport/internal/syncer"
 )
 
 func cliConfig(t *testing.T, extra string) string {
@@ -102,7 +109,62 @@ func TestCLIRejectsSecondWriter(t *testing.T) {
 		t.Fatal("couldn't create test writer lock", err)
 	}
 	err := Run(context.Background(), []string{"sync", "-config", path}, &bytes.Buffer{}, &bytes.Buffer{}, "test")
-	if err == nil || !strings.Contains(err.Error(), "another serve or sync") {
+	if err == nil || !strings.Contains(err.Error(), "another Meloport process") {
 		t.Fatalf("wrong lock behavior: %v", err)
+	}
+}
+
+func TestCLIRetagExistingDisabledTaskWithoutKey(t *testing.T) {
+	path := cliConfig(t, "    enabled: false\napi:\n  base_url: http://127.0.0.1:1\n")
+	t.Setenv("CHKSZ_API_KEY", "")
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	audio, err := os.ReadFile(filepath.Join("..", "download", "testdata", "tone.flac"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := cfg.Tasks[0].Directory
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, "netease-123.flac")
+	if err := os.WriteFile(file, audio, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := state.Open(cfg.Storage.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(audio)
+	err = store.SaveDownload(context.Background(), state.Download{TaskID: "test", Provider: "netease", TrackID: "123", Path: file, Size: int64(len(audio)), SHA256: hex.EncodeToString(digest[:]), Title: "本地歌曲", Artists: []string{"本地歌手"}, Album: "本地专辑"})
+	if closeErr := store.Close(); err != nil || closeErr != nil {
+		t.Fatalf("store error %v; %v", err, closeErr)
+	}
+	for i := 0; i < 2; i++ {
+		var output, diagnostic bytes.Buffer
+		if err := Run(context.Background(), []string{"retag", "-config", path, "-task", "test"}, &output, &diagnostic, "test"); err != nil {
+			t.Fatal(err)
+		}
+		var got syncer.RetagSummary
+		if err := json.Unmarshal(output.Bytes(), &got); err != nil || got.Total != 1 || got.Failed != 0 || (i == 0 && got.Tagged != 1) || (i == 1 && got.Skipped != 1) {
+			t.Fatalf("retag result %s; %v", output.Bytes(), err)
+		}
+	}
+	tags, err := taglib.ReadTags(file)
+	if err != nil || len(tags[taglib.Title]) != 1 || tags[taglib.Title][0] != "本地歌曲" {
+		t.Fatalf("tags %+v; error %v", tags, err)
+	}
+	store, err = state.Open(cfg.Storage.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	item, found, err := store.GetDownload(context.Background(), "test", "netease", "123")
+	final, readErr := os.ReadFile(file)
+	finalDigest := sha256.Sum256(final)
+	if err != nil || readErr != nil || !found || item.TagPending || item.Size != int64(len(final)) || item.SHA256 != hex.EncodeToString(finalDigest[:]) {
+		t.Fatalf("retag did not update final file state: %+v; %v; %v", item, err, readErr)
 	}
 }

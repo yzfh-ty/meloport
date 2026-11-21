@@ -106,7 +106,11 @@ func (d *Downloader) Download(ctx context.Context, audio model.ResolvedTrack, di
 			return empty, err
 		}
 		if exists {
-			return result, nil
+			if len(trackTags(audio.Track)) == 0 && model.CanonicalCoverURL(audio.Track.CoverURL) == "" {
+				result.TagsComplete = true
+				return result, nil
+			}
+			return d.Tag(ctx, audio.Track, path)
 		}
 	}
 	parsed, err := url.Parse(audio.URL)
@@ -186,20 +190,45 @@ func (d *Downloader) Download(ctx context.Context, audio model.ResolvedTrack, di
 	if err := file.Close(); err != nil {
 		return empty, errors.New("cannot close completed audio file")
 	}
+	result := model.DownloadResult{Size: size, SHA256: hex.EncodeToString(hash.Sum(nil))}
+	publishPath := tempPath
+	hasTags := len(trackTags(audio.Track)) != 0 || model.CanonicalCoverURL(audio.Track.CoverURL) != ""
+	if hasTags {
+		stage, tagged, tagErr := d.prepareTags(ctx, audio.Track, tempPath, ext)
+		if tagErr != nil {
+			if ctx.Err() != nil {
+				return empty, ctx.Err()
+			}
+			result.TagWarning = "audio was saved, but tags could not be written; retry local tagging"
+		} else {
+			defer stage.remove()
+			result = tagged
+			if stage.path != "" {
+				publishPath = stage.path
+			}
+		}
+	} else {
+		result.TagsComplete = true
+	}
+	if err := ctx.Err(); err != nil {
+		return empty, err
+	}
 	path := filepath.Join(directory, basename+"."+ext)
-	if err := os.Link(tempPath, path); err != nil {
+	if err := os.Link(publishPath, path); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			result, exists, checkErr := d.existing(ctx, path)
 			if checkErr != nil {
 				return empty, checkErr
 			}
 			if exists {
+				result.TagsComplete = !hasTags
 				return result, nil
 			}
 		}
 		return empty, errors.New("cannot atomically publish audio file (destination filesystem must support hard links)")
 	}
-	return model.DownloadResult{Path: path, Size: size, SHA256: hex.EncodeToString(hash.Sum(nil))}, nil
+	result.Path = path
+	return result, nil
 }
 
 func (d *Downloader) existing(ctx context.Context, path string) (model.DownloadResult, bool, error) {
@@ -211,7 +240,7 @@ func (d *Downloader) existing(ctx context.Context, path string) (model.DownloadR
 	if err != nil {
 		return empty, false, errors.New("cannot inspect existing audio file")
 	}
-	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > d.maxBytes {
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > d.localLimit() {
 		return empty, true, errors.New("existing audio destination is not a valid regular audio file; preserved without changes")
 	}
 	file, err := os.Open(path)
@@ -231,7 +260,7 @@ func (d *Downloader) existing(ctx context.Context, path string) (model.DownloadR
 		return empty, true, errors.New("cannot read existing audio file")
 	}
 	hash := sha256.New()
-	size, err := io.Copy(hash, &contextReader{ctx: ctx, reader: io.LimitReader(file, d.maxBytes+1)})
+	size, err := io.Copy(hash, &contextReader{ctx: ctx, reader: io.LimitReader(file, d.localLimit()+1)})
 	if err != nil {
 		if ctx.Err() != nil {
 			return empty, true, requestError(ctx)

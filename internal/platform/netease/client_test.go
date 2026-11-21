@@ -28,6 +28,18 @@ func fixtureClient(server *httptest.Server) *Client {
 	return New(Options{BaseURL: server.URL, HTTP: platform.NewHTTP(server.Client(), time.Second, 0), Cookie: "MUSIC_U=platform_cookie_only"})
 }
 
+func TestParseTrackKeepsNativeAlbumTags(t *testing.T) {
+	item := decodeJSON(t, []byte(`{"id":123,"name":"歌曲","ar":[{"name":"主唱"}],"al":{"name":"专辑","picUrl":"http://p2.music.126.net/album.jpg","artists":[{"name":"专辑艺人"}]},"no":7,"cd":"2","publishTime":1704038400000}`))
+	track, err := parseTrack(item)
+	if err != nil || track.CoverURL != "https://p2.music.126.net/album.jpg" || track.TrackNumber != 7 || track.DiscNumber != 2 || track.Year != "2024" || !reflect.DeepEqual(track.AlbumArtists, []string{"专辑艺人"}) {
+		t.Fatalf("unexpected native NetEase album tags: %+v, %v", track, err)
+	}
+	track, err = parseTrack(decodeJSON(t, []byte(`{"id":123,"al":{"picUrl":"https://p2.music.126.net/album.jpg?token=nonpublic"},"no":0,"cd":"A","publishTime":0}`)))
+	if err != nil || track.CoverURL != "" || track.TrackNumber != 0 || track.DiscNumber != 0 || track.Year != "" || len(track.AlbumArtists) > 0 {
+		t.Fatalf("invented NetEase metadata or retained a signed cover: %+v, %v", track, err)
+	}
+}
+
 func decodeJSON(t *testing.T, raw []byte) map[string]any {
 	t.Helper()
 	var result map[string]any

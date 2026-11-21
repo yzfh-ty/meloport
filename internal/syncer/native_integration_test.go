@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"go.senan.xyz/taglib"
+
 	"meloport/internal/chksz"
 	"meloport/internal/download"
 	"meloport/internal/model"
@@ -133,16 +135,13 @@ func TestNativeQQPlaylistUsesMeteredAPIOnlyForMissingAudio(t *testing.T) {
 	if resolveCalls.Load() != 3 || audioCalls.Load() != 3 || playlistAPICalls.Load() != 0 {
 		t.Fatal("repair did not limit API usage to the missing song")
 	}
-	for _, mid := range []string{"003FirstMID", "003SecondMID"} {
+	for mid, title := range map[string]string{"003FirstMID": "One", "003SecondMID": "Two"} {
 		path := filepath.Join(task.Directory, "qq-"+mid+".flac")
-		got, err := os.ReadFile(path)
-		if err != nil || !bytes.Equal(got, payload) {
-			t.Fatalf("wrong saved audio: %s %v", mid, err)
-		}
 		record, found, err := store.GetDownload(context.Background(), task.ID, "qq", mid)
 		if err != nil || !found || record.Path != path || record.SHA256 == "" {
 			t.Fatalf("missing QQ identity record: %+v %v", record, err)
 		}
+		assertTaggedFLAC(t, payload, record, map[string][]string{taglib.Title: {title}, taglib.Artist: {"Artist"}, taglib.Album: {"Album"}})
 	}
 }
 

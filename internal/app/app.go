@@ -40,9 +40,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 		}
 		_, err := fmt.Fprintln(stdout, version)
 		return err
-	case "serve", "sync", "validate", "status", "playlist", "search":
+	case "serve", "sync", "retag", "validate", "status", "playlist", "search":
 	default:
-		return errors.New("unknown command; use serve, sync, playlist, search, validate, status or version")
+		return errors.New("unknown command; use serve, sync, retag, playlist, search, validate, status or version")
 	}
 	flags := flag.NewFlagSet("meloport "+command, flag.ContinueOnError)
 	// flag's default diagnostics echo invalid values, which may contain a key.
@@ -55,6 +55,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 	var offset *int
 	if command == "sync" || command == "playlist" {
 		taskID = flags.String("task", "", "run one enabled task by ID; empty runs all enabled tasks")
+	}
+	if command == "retag" {
+		taskID = flags.String("task", "", "fill missing tags for one task by ID; empty processes all configured tasks")
 	}
 	if command == "search" {
 		searchPlatform = flags.String("platform", "netease", "netease, qq or kugou")
@@ -69,7 +72,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 		limit = flags.Int("limit", 20, "number of recent task runs, 1-1000")
 	}
 	flags.Usage = func() {
-		fmt.Fprintln(stderr, "Meloport: scheduled playlist downloads. Commands: serve, sync, playlist, search, validate, status, version.")
+		fmt.Fprintln(stderr, "Meloport: scheduled playlist downloads. Commands: serve, sync, retag, playlist, search, validate, status, version.")
 		fmt.Fprintf(stderr, "Usage: meloport %s [options]\n", command)
 		flags.SetOutput(stderr)
 		flags.PrintDefaults()
@@ -158,12 +161,15 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 	}
 	var selected []config.Task
 	for _, task := range cfg.Tasks {
-		if task.IsEnabled() && (taskID == nil || *taskID == "" || *taskID == task.ID) {
+		if (command == "retag" || task.IsEnabled()) && (taskID == nil || *taskID == "" || *taskID == task.ID) {
 			selected = append(selected, task)
 		}
 	}
 	if len(selected) == 0 && command == "sync" {
 		return errors.New("no enabled tasks match; check tasks and -task")
+	}
+	if len(selected) == 0 && command == "retag" {
+		return errors.New("no configured tasks match; check tasks and -task")
 	}
 	downloader, err := download.New(download.Options{Timeout: cfg.Download.Timeout.Duration, MaxBytes: cfg.Download.MaxSizeMB * 1024 * 1024})
 	if err != nil {
@@ -179,7 +185,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 	}
 	defer lock.Close()
 	if !locked {
-		return errors.New("another serve or sync process is using this database; stop it before starting another writer")
+		return errors.New("another Meloport process is using this database; stop it before starting another writer")
 	}
 	store, err := state.Open(cfg.Storage.Database)
 	if err != nil {
@@ -190,6 +196,23 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 		return err
 	}
 	engine := syncer.NewWithSources(metadata, metadata, downloader, store)
+	if command == "retag" {
+		enc := json.NewEncoder(stdout)
+		var runErrors []error
+		for _, task := range selected {
+			summary, err := engine.Retag(ctx, task.Model())
+			if encodeErr := enc.Encode(summary); encodeErr != nil {
+				return encodeErr
+			}
+			if err != nil {
+				runErrors = append(runErrors, fmt.Errorf("retag %s: %w", task.ID, err))
+				if ctx.Err() != nil {
+					break
+				}
+			}
+		}
+		return errors.Join(runErrors...)
+	}
 	if command == "sync" {
 		enc := json.NewEncoder(stdout)
 		var runErrors []error

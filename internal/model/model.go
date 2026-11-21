@@ -1,13 +1,23 @@
 // Package model contains the provider-independent data used by synchronization.
 package model
 
+import (
+	"net/url"
+	"strings"
+)
+
 type Track struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
-	Artists  []string `json:"artists"`
-	Album    string   `json:"album"`
-	Hash     string   `json:"hash,omitempty"`
-	Duration int      `json:"duration,omitempty"`
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Artists      []string `json:"artists"`
+	Album        string   `json:"album"`
+	AlbumArtists []string `json:"album_artists,omitempty"`
+	TrackNumber  int      `json:"track_number,omitempty"`
+	DiscNumber   int      `json:"disc_number,omitempty"`
+	Year         string   `json:"year,omitempty"`
+	CoverURL     string   `json:"cover_url,omitempty"`
+	Hash         string   `json:"hash,omitempty"`
+	Duration     int      `json:"duration,omitempty"`
 }
 
 type Playlist struct {
@@ -30,15 +40,36 @@ type Ranking struct {
 }
 
 type ResolvedTrack struct {
-	URL    string
-	Format string
-	Size   int64
+	URL      string
+	Format   string
+	Size     int64
+	Track    Track
+	CoverURL string
 }
 
 type DownloadResult struct {
-	Path   string
-	Size   int64
-	SHA256 string
+	Path         string
+	Size         int64
+	SHA256       string
+	TagsComplete bool
+	TagWarning   string
+}
+
+// CanonicalCoverURL keeps only public platform-CDN image addresses that can be
+// persisted with metadata. Signed URLs, credentials and arbitrary hosts are
+// deliberately excluded; a missing cover must never block the audio download.
+func CanonicalCoverURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.RawQuery != "" || u.ForceQuery || strings.Contains(raw, "#") || u.Port() != "" || u.Path == "" || strings.Contains(strings.ToLower(u.Path), "chksz_") {
+		return ""
+	}
+	host := strings.ToLower(u.Hostname())
+	allowed := host == "y.gtimg.cn" || host == "imge.kugou.com" || host == "imgessl.kugou.com" || host == "music.126.net" || strings.HasSuffix(host, ".music.126.net") || host == "kgimg.com" || strings.HasSuffix(host, ".kgimg.com")
+	if !allowed {
+		return ""
+	}
+	u.Scheme, u.Host = "https", host
+	return u.String()
 }
 
 // Task is the fully validated, effective configuration for one subscription.

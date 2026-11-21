@@ -296,7 +296,9 @@ func rankingTrack(raw any) (model.Track, error) {
 	} else if value, ok := platform.Integer(object["timelength"]); ok && value >= 0 && value <= 24*60*60*1000 {
 		duration = int(value / 1000)
 	}
-	return model.Track{ID: id, Hash: hash, Name: name, Artists: artists, Album: album, Duration: duration}, nil
+	track := model.Track{ID: id, Hash: hash, Name: name, Artists: artists, Album: album, Duration: duration}
+	addAlbumTags(&track, object)
+	return track, nil
 }
 
 func (c *Client) endpoint(origin, path string) string {
@@ -785,7 +787,7 @@ func (c *Client) buildPlaylist(ctx context.Context, identity, name string, raw [
 		for _, hash := range batch {
 			items = append(items, map[string]string{"hash": hash})
 		}
-		payload, _ := json.Marshal(map[string]any{"area_code": "1", "show_privilege": 1, "show_album_info": "1", "is_publish": "", "appid": 1005, "clientver": 11451, "mid": "1", "dfid": "-", "clienttime": time.Now().UnixMilli(), "key": androidSigningMaterial, "fields": "album_info,author_name,audio_info,ori_audio_name,base,songname,classification", "data": items})
+		payload, _ := json.Marshal(map[string]any{"area_code": "1", "show_privilege": 1, "show_album_info": "1", "is_publish": "", "appid": 1005, "clientver": 11451, "mid": "1", "dfid": "-", "clienttime": time.Now().UnixMilli(), "key": androidSigningMaterial, "fields": "album_info,author_name,audio_info,ori_audio_name,base,songname,classification,img,album_img", "data": items})
 		value, err := c.request(ctx, http.MethodPost, "https://gateway.kugou.com", "/v3/album_audio/audio", nil, payload, false, false)
 		if err != nil {
 			return model.Playlist{}, err
@@ -850,7 +852,9 @@ func embeddedTrack(item map[string]any, hash string) (model.Track, bool) {
 	if strings.TrimSpace(name) == "" || len(artists) == 0 || strings.TrimSpace(album) == "" || !ok || ms <= 0 || ms > 24*60*60*1000 {
 		return model.Track{}, false
 	}
-	return model.Track{ID: hash, Hash: hash, Name: name, Artists: artists, Album: album, Duration: int(ms / 1000)}, true
+	track := model.Track{ID: hash, Hash: hash, Name: name, Artists: artists, Album: album, Duration: int(ms / 1000)}
+	addAlbumTags(&track, item)
+	return track, true
 }
 
 func detailTrack(item map[string]any) (model.Track, error) {
@@ -864,10 +868,47 @@ func detailTrack(item map[string]any) (model.Track, error) {
 		return model.Track{}, errors.New("Kugou song details have no title")
 	}
 	track := model.Track{ID: hash, Hash: hash, Name: name, Artists: splitArtists(platform.Text(item, "author_name")), Album: html.UnescapeString(platform.Text(platform.Object(item["album_info"]), "album_name", "name"))}
+	addAlbumTags(&track, item)
 	if ms, ok := platform.Integer(audio["timelength"]); ok && ms >= 0 && ms <= 24*60*60*1000 {
 		track.Duration = int(ms / 1000)
 	}
 	return track, nil
+}
+
+func addAlbumTags(track *model.Track, item map[string]any) {
+	track.CoverURL = songCover(item)
+	album := platform.Object(item["album_info"])
+	track.AlbumArtists = splitArtists(platform.Text(album, "author_name"))
+	for _, value := range []string{platform.Text(album, "publish_date"), platform.Text(item, "publish_date")} {
+		if date, err := time.Parse("2006-01-02", value); err == nil && date.Year() >= 1900 && date.Year() <= 2100 {
+			track.Year = date.Format("2006")
+			break
+		}
+	}
+}
+
+// Covers from native Kugou responses use a literal {size} template. Only
+// album/song cover fields are considered; singer avatars are not album art.
+func songCover(item map[string]any) string {
+	album := platform.Object(item["album_info"])
+	audio := platform.Object(item["audio_info"])
+	for _, value := range []string{
+		platform.Text(item, "album_sizable_cover"),
+		platform.Text(item, "album_img"),
+		platform.Text(album, "sizable_cover"),
+		platform.Text(album, "pic"),
+		platform.Text(album, "img"),
+		platform.Text(album, "s_img"),
+		platform.Text(platform.Object(item["trans_param"]), "union_cover"),
+		platform.Text(platform.Object(audio["trans_param"]), "union_cover"),
+		platform.Text(item, "img"),
+		platform.Text(item, "imgurl"),
+	} {
+		if cover := model.CanonicalCoverURL(strings.ReplaceAll(html.UnescapeString(value), "{size}", "800")); cover != "" {
+			return cover
+		}
+	}
+	return ""
 }
 
 func splitArtists(value string) []string {
@@ -939,6 +980,7 @@ func (c *Client) Search(ctx context.Context, keyword string, limit, offset int) 
 			artists[i] = html.UnescapeString(artists[i])
 		}
 		track := model.Track{ID: id, Hash: hash, Name: html.UnescapeString(name), Artists: artists, Album: html.UnescapeString(platform.Text(item, "AlbumName"))}
+		addAlbumTags(&track, item)
 		if seconds, ok := platform.Integer(item["Duration"]); ok && seconds >= 0 && seconds <= 24*60*60 {
 			track.Duration = int(seconds)
 		}
