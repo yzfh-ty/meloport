@@ -210,8 +210,12 @@ func TestWebStaticRoutesOverviewAndKeyRedaction(t *testing.T) {
 	for _, path := range []string{"/", "/assets/app.js", "/assets/app.css", "/healthz", "/readyz"} {
 		w := webRequest(t, f, http.MethodGet, path, nil)
 		webStatus(t, w, 200)
-		if w.Header().Get("X-Content-Type-Options") != "nosniff" || w.Header().Get("Content-Security-Policy") == "" {
+		policy := w.Header().Get("Content-Security-Policy")
+		if w.Header().Get("X-Content-Type-Options") != "nosniff" || policy == "" {
 			t.Fatal("missing browser security headers")
+		}
+		if path == "/" && !strings.Contains(policy, "img-src 'self' blob:") {
+			t.Fatalf("CSP does not permit locally fetched QR images: %q", policy)
 		}
 	}
 	webStatus(t, webRequest(t, f, http.MethodGet, "/unknown", nil), 404)

@@ -141,6 +141,9 @@ func TestCloudWebLoginReconcileAndLogout(t *testing.T) {
 	}
 	qr := webRequest(t, f, http.MethodGet, session.QRCode, nil)
 	webStatus(t, qr, http.StatusOK)
+	if len(qr.Body.Bytes()) < 26 || (qr.Body.Bytes()[25] != 2 && qr.Body.Bytes()[25] != 6) {
+		t.Fatalf("QR response must be a browser-compatible true-colour PNG; colour type = %d", qr.Body.Bytes()[25])
+	}
 	if _, err := png.Decode(qr.Body); err != nil {
 		t.Fatal(err)
 	}

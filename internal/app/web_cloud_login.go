@@ -1,10 +1,14 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"image"
+	"image/draw"
+	"image/png"
 	"net/http"
 	"strconv"
 	"sync"
@@ -14,6 +18,24 @@ import (
 
 	"meloport/internal/cloud115"
 )
+func encodeCloudLoginQR(value string) ([]byte, error) {
+	indexed, err := qrcode.Encode(value, qrcode.Medium, 256)
+	if err != nil {
+		return nil, err
+	}
+	decoded, err := png.Decode(bytes.NewReader(indexed))
+	if err != nil {
+		return nil, err
+	}
+	// Re-encode the indexed QR as true-colour PNG for consistent browser rendering.
+	trueColour := image.NewRGBA(decoded.Bounds())
+	draw.Draw(trueColour, trueColour.Bounds(), decoded, decoded.Bounds().Min, draw.Src)
+	var output bytes.Buffer
+	if err := png.Encode(&output, trueColour); err != nil {
+		return nil, err
+	}
+	return output.Bytes(), nil
+}
 
 const cloudLoginTTL = 5 * time.Minute
 
@@ -99,7 +121,7 @@ func (c *webController) cloudLoginBegin(w http.ResponseWriter, r *http.Request) 
 	device, err := l.auth.Begin(ctx, c.cloudBoot.ClientID)
 	var png []byte
 	if err == nil {
-		png, err = qrcode.Encode(device.QrCode, qrcode.Medium, 256)
+		png, err = encodeCloudLoginQR(device.QrCode)
 		if err != nil {
 			// Encoder diagnostics may contain parts of the device code.
 			err = errors.New("115 returned a QR code that cannot be displayed")

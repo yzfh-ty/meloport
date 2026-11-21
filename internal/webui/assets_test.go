@@ -32,6 +32,9 @@ func TestEmbeddedAssets(t *testing.T) {
 			if !strings.Contains(response.Header().Get("Content-Security-Policy"), "script-src 'self'") {
 				t.Fatal("missing same-origin policy")
 			}
+			if item.path == "/" && !strings.Contains(response.Header().Get("Content-Security-Policy"), "img-src 'self' blob:") {
+				t.Fatal("home page CSP does not permit fetched QR image blobs")
+			}
 			head := httptest.NewRecorder()
 			handler.ServeHTTP(head, httptest.NewRequest("HEAD", item.path, nil))
 			if head.Code != http.StatusOK || head.Body.Len() != 0 {

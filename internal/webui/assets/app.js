@@ -1473,6 +1473,7 @@ document.addEventListener('DOMContentLoaded', () => {
     state.cloud.login = null;
     clearTimeout(session.timer);
     session.controller.abort();
+    if (session.qrURL) URL.revokeObjectURL(session.qrURL);
     $('cloud-qr').replaceChildren();
     if (session.id) request(cloudSessionPath(session.id), { method: 'DELETE', timeout: 5000 }).catch(() => {});
   }
@@ -1491,12 +1492,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const response = await fetch(path, { headers: { 'X-Meloport-Request': '1' }, mode: 'same-origin', redirect: 'error', cache: 'no-store', signal });
     if (!response.ok || response.headers.get('Content-Type') !== 'image/png') throw new Error('无法读取二维码，请重新获取。');
     const blob = await response.blob();
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(new Error('无法读取二维码，请重新获取。'));
-      reader.readAsDataURL(blob);
-    });
+    if (blob.type !== 'image/png' || blob.size === 0) throw new Error('无法读取二维码，请重新获取。');
+    return URL.createObjectURL(blob);
   }
 
   async function pollCloudLogin(session) {
@@ -1506,6 +1503,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (state.cloud.login !== session) return;
       if (result.status === 'authorized') {
         state.cloud.login = null;
+        clearTimeout(session.timer);
+        session.controller.abort();
+        if (session.qrURL) URL.revokeObjectURL(session.qrURL);
         closeDialog('cloud-login-dialog');
         await loadCloud();
         toast('115 网盘已授权');
@@ -1517,6 +1517,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       const labels = { expired: '二维码已过期，请重新获取。', cancelled: '手机端已取消授权。' };
+      state.cloud.login = null;
+      clearTimeout(session.timer);
+      session.controller.abort();
+      if (session.qrURL) URL.revokeObjectURL(session.qrURL);
       renderCloudLogin(labels[result.status] || result.error || '授权未完成，请重新获取二维码。', { retry: true, error: true });
     } catch (error) {
       if (state.cloud.login === session) renderCloudLogin(error.message, { retry: true, error: true });
@@ -1530,7 +1534,7 @@ document.addEventListener('DOMContentLoaded', () => {
       state.dialogTriggers.set(dialog.id, trigger);
       dialog.showModal();
     }
-    const session = { id: '', timer: null, controller: new AbortController() };
+    const session = { id: '', timer: null, qrURL: '', controller: new AbortController() };
     state.cloud.login = session;
     renderCloudLogin('正在获取二维码…', { loading: true });
     try {
@@ -1540,15 +1544,29 @@ document.addEventListener('DOMContentLoaded', () => {
         if (session.id) request(cloudSessionPath(session.id), { method: 'DELETE', timeout: 5000 }).catch(() => {});
         return;
       }
-      const image = await cloudQRImage(result.qrcode, session.id, session.controller.signal);
-      if (state.cloud.login !== session) return;
+      const qrURL = await cloudQRImage(result.qrcode, session.id, session.controller.signal);
+      if (state.cloud.login !== session) {
+        URL.revokeObjectURL(qrURL);
+        return;
+      }
+      session.qrURL = qrURL;
       const qr = element('img');
       qr.alt = '115 登录二维码';
       qr.width = qr.height = 224;
-      qr.src = image;
+      qr.addEventListener('error', () => {
+        if (state.cloud.login === session) {
+          cancelCloudLogin();
+          renderCloudLogin('二维码无法显示，请重新获取。', { retry: true, error: true });
+        }
+      }, { once: true });
+      qr.addEventListener('load', () => {
+        if (state.cloud.login !== session) return;
+        renderCloudLogin('等待扫码…', { qr: true });
+        session.timer = setTimeout(() => pollCloudLogin(session), 1800);
+      }, { once: true });
       $('cloud-qr').replaceChildren(qr);
-      renderCloudLogin('等待扫码…', { qr: true });
-      session.timer = setTimeout(() => pollCloudLogin(session), 1800);
+      renderCloudLogin('正在显示二维码…', { qr: true });
+      qr.src = session.qrURL;
     } catch (error) {
       if (state.cloud.login === session) renderCloudLogin(error.message, { retry: true, error: true });
     }
