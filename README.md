@@ -13,13 +13,23 @@
 .\bin\meloport.exe serve -config config.yaml
 ```
 
-开发前端时可以跳过手动构建：
+修改后需要手动测试时，双击项目根目录的 **`start-test.cmd`** 即可启动开发服务，也可以在终端运行：
+
+```powershell
+.\start-test.cmd
+# 使用其他配置文件（相对路径以项目根目录为基准）：
+.\start-test.cmd -Config "tmp\manual-test.yaml"
+```
+
+脚本复用下面的开发命令，每次启动自动编译 Go，使用 `config.yaml` 和当前终端的环境变量；配置不存在时由服务创建。启动后打开 **http://127.0.0.1:8080/**；如果修改了 `server.listen`，请使用日志中的实际地址。测试结束按 `Ctrl+C` 停止服务；若命令提示符询问是否终止批处理，输入 `Y`。启动失败时窗口会保留错误提示。该入口会运行配置中的定时任务，请留意已有订阅和 `run_on_start` 设置。
+
+也可以直接在 PowerShell 中运行：
 
 ```powershell
 .\scripts\dev.ps1 -Action dev -Config config.yaml
 ```
 
-该命令用 `go run` 启动本机服务，并从 `internal/webui/assets` 按请求读取 `index.html`、`app.css` 和 `app.js`。修改这三个文件后刷新浏览器即可看到结果；修改 Go 后停止并重新运行命令。开发资源目录仅在显式 `dev` 命令中启用，生产 `serve` 仍使用嵌入资源。
+该命令先编译 `bin/meloport-dev.exe`，再在当前窗口直接运行服务，并从 `internal/webui/assets` 按请求读取 `index.html`、`app.css` 和 `app.js`。修改这三个文件后刷新浏览器即可看到结果；修改 Go 后停止并重新运行命令。开发资源目录仅在显式 `dev` 命令中启用，生产 `serve` 仍使用嵌入资源。
 
 打开 **http://127.0.0.1:8080/**。首次 `serve` 如果找不到配置文件，会创建仅含空任务列表的本地配置；**无需 Key 即可启动控制台**。已有配置不会被覆盖。
 

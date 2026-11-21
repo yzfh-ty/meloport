@@ -39,8 +39,11 @@ try {
         return
     }
     if ($Action -eq 'dev') {
+        New-Item -ItemType Directory -Path (Join-Path $projectRoot 'bin') -Force | Out-Null
+        $binary = Join-Path $projectRoot 'bin\meloport-dev.exe'
+        Invoke-Go -GoArguments @('build', '-o', $binary, './cmd/meloport')
         $liveAssets = Join-Path $projectRoot 'internal\webui\assets'
-        & go run ./cmd/meloport serve -config $Config -web-dir $liveAssets
+        & $binary serve -config $Config -web-dir $liveAssets
         if ($LASTEXITCODE -ne 0) { throw "meloport exited with code $LASTEXITCODE" }
         return
     }
