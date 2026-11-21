@@ -15,27 +15,30 @@ import (
 )
 
 type Cloud115 struct {
-	Enabled            bool     `yaml:"enabled"`
-	AccessTokenEnv     string   `yaml:"access_token_env"`
-	ClientID           string   `yaml:"client_id"`
-	TargetCID          string   `yaml:"target_cid"`
-	StagingDir         string   `yaml:"staging_dir"`
-	STRMDir            string   `yaml:"strm_dir"`
-	MediaListen        string   `yaml:"media_listen"`
-	MediaBaseURL       string   `yaml:"media_base_url"`
-	NavidromeURL       string   `yaml:"navidrome_url"`
-	NavidromeMountRoot string   `yaml:"navidrome_mount_root"`
-	PollInterval       Duration `yaml:"poll_interval"`
-	Timeout            Duration `yaml:"timeout"`
-	stagingDirInput    string
-	strmDirInput       string
+	Enabled               bool     `yaml:"enabled"`
+	AccessTokenEnv        string   `yaml:"access_token_env"`
+	ClientID              string   `yaml:"client_id"`
+	TargetCID             string   `yaml:"target_cid"`
+	StagingDir            string   `yaml:"staging_dir"`
+	STRMDir               string   `yaml:"strm_dir"`
+	MediaListen           string   `yaml:"media_listen"`
+	MediaBaseURL          string   `yaml:"media_base_url"`
+	NavidromeURL          string   `yaml:"navidrome_url"`
+	NavidromeMountRoot    string   `yaml:"navidrome_mount_root"`
+	NavidromeUsername     string   `yaml:"navidrome_username"`
+	NavidromePasswordEnv  string   `yaml:"navidrome_password_env"`
+	NavidromePlaylistSync bool     `yaml:"navidrome_playlist_sync"`
+	PollInterval          Duration `yaml:"poll_interval"`
+	Timeout               Duration `yaml:"timeout"`
+	stagingDirInput       string
+	strmDirInput          string
 }
 
 func cloud115Defaults() Cloud115 {
 	return Cloud115{
-		AccessTokenEnv: "MELOPORT_115_ACCESS_TOKEN",
-		ClientID:       "100197303",
-		StagingDir:     "data/115-staging", STRMDir: "data/strm",
+		AccessTokenEnv: "MELOPORT_115_ACCESS_TOKEN", NavidromePasswordEnv: "MELOPORT_NAVIDROME_PASSWORD",
+		ClientID:   "100197303",
+		StagingDir: "data/115-staging", STRMDir: "data/strm",
 		MediaListen: "127.0.0.1:8081", MediaBaseURL: "http://127.0.0.1:8081",
 		PollInterval: Duration{time.Minute}, Timeout: Duration{15 * time.Second},
 	}
@@ -49,6 +52,9 @@ func (c *Config) validateCloud115(baseDir string) error {
 	}
 	if !envPattern.MatchString(cloud.AccessTokenEnv) || (cloud.Enabled || cloud.TargetCID != "") && !idPattern.MatchString(cloud.TargetCID) {
 		return errors.New("cloud115 requires an access token environment variable name and a non-root numeric target_cid")
+	}
+	if cloud.NavidromePasswordEnv == "" {
+		cloud.NavidromePasswordEnv = "MELOPORT_NAVIDROME_PASSWORD"
 	}
 	if cloud.Timeout.Duration < time.Second || cloud.Timeout.Duration > time.Minute || cloud.PollInterval.Duration < 15*time.Second || cloud.PollInterval.Duration > 24*time.Hour {
 		return errors.New("cloud115.timeout must be between 1s and 1m and poll_interval between 15s and 24h")
@@ -66,12 +72,30 @@ func (c *Config) validateCloud115(baseDir string) error {
 	if (cloud.NavidromeURL == "") != (cloud.NavidromeMountRoot == "") {
 		return errors.New("set both cloud115.navidrome_url and navidrome_mount_root to enable the music proxy")
 	}
+	var navidromeURL *url.URL
 	if cloud.NavidromeURL != "" {
-		if _, err := parseCloudURL(cloud.NavidromeURL); err != nil {
+		if navidromeURL, err = parseCloudURL(cloud.NavidromeURL); err != nil {
 			return errors.New("cloud115.navidrome_url must be an HTTP(S) URL without credentials, query or fragment")
 		}
 		if !media.ValidMountRoot(cloud.NavidromeMountRoot) {
 			return errors.New("cloud115.navidrome_mount_root must be an absolute POSIX or Windows drive path")
+		}
+	}
+	if cloud.NavidromePasswordEnv != "" && !envPattern.MatchString(cloud.NavidromePasswordEnv) {
+		return errors.New("cloud115.navidrome_password_env must name an environment variable")
+	}
+	if cloud.NavidromePlaylistSync {
+		if !cloud.Enabled || cloud.NavidromeURL == "" || cloud.NavidromeMountRoot == "" {
+			return errors.New("Navidrome playlist sync requires enabled 115 storage, navidrome_url and navidrome_mount_root")
+		}
+		if navidromeURL.Scheme == "http" && !strings.EqualFold(navidromeURL.Hostname(), "localhost") && !net.ParseIP(navidromeURL.Hostname()).IsLoopback() {
+			return errors.New("Navidrome playlist sync requires HTTPS for non-loopback URLs")
+		}
+		if strings.TrimSpace(cloud.NavidromeUsername) == "" || strings.ContainsAny(cloud.NavidromeUsername, "\x00\r\n") {
+			return errors.New("cloud115.navidrome_username is required for playlist sync")
+		}
+		if !envPattern.MatchString(cloud.NavidromePasswordEnv) {
+			return errors.New("cloud115.navidrome_password_env must name an environment variable")
 		}
 	}
 	if !cloud.Enabled {

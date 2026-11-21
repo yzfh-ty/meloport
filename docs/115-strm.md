@@ -46,11 +46,12 @@ Meloport 下载并补齐音频标签，把成品交给 CD2 上传到 115。Melop
 
 **支持音频 STRM 的播放器**读取导出文件中的稳定媒体地址。播放器请求该地址时，Meloport 按该请求的 User-Agent 获取 115 临时直链并返回 HTTP `302`。跨设备使用时，仅把 HTTPS 播放地址反代到 `media_listen`。如果配置了地址路径前缀，反代应去掉前缀后再转发。持有 STRM 链接即可请求对应的音频，请保护导出目录，并在反代访问日志中隐藏媒体路径。
 
-**Navidrome** 使用另一条链路。Navidrome 的曲库扫描 CD2 挂载的 **115 真实音频目录**，`.strm` 文件交给支持该格式的其他播放器。若希望 Subsonic 客户端播放时跳转 115 直链：
+**Navidrome** 使用另一条链路。Navidrome 的曲库扫描 CD2 挂载的 **115 真实音频目录**，`.strm` 文件交给支持该格式的其他播放器。CD2 暂存目录按 `平台/榜单名--任务ID/歌曲文件` 组织，方便按平台和榜单浏览。若希望 Subsonic 客户端播放时跳转 115 直链：
 
 1. 在网页「Navidrome 接入」填写 `navidrome_url`，并在 `navidrome_mount_root` 填写 Navidrome 运行环境看到的 115 目标目录绝对路径。保存后重启 Meloport。
-2. 让 Navidrome 扫描挂载目录。在对应播放器设置中开启 **Report Real Path**，关闭服务端转码和码率限制。
-3. 将 Subsonic 客户端连接到 Meloport 媒体地址，使用 Navidrome 的账号和原生认证。请勿将 Meloport 加入 Navidrome 的外部鉴权代理信任列表。
+2. 如需自动创建榜单歌单，填写 Navidrome 用户名，设置 `MELOPORT_NAVIDROME_PASSWORD`（或配置的环境变量名），并启用「同步创建 Navidrome 歌单」。远程 Navidrome 地址必须使用 HTTPS，本机地址可用 HTTP。只保存环境变量名和用户名；密码只从 Meloport 进程环境读取。Navidrome 必须先扫描完歌单中的所有文件，后续榜单同步才会创建或更新歌单。歌单名称包含平台、榜单名和任务标识；普通订阅歌单不会发布。
+3. 让 Navidrome 扫描挂载目录。在对应播放器设置中开启 **Report Real Path**，关闭服务端转码和码率限制。
+4. 将 Subsonic 客户端连接到 Meloport 媒体地址，使用 Navidrome 的账号和原生认证。请勿将 Meloport 加入 Navidrome 的外部鉴权代理信任列表。
 
 经过 Meloport 的 `/rest/stream` 或 `/rest/stream.view` 请求，在原生鉴权成功、有真实路径且能匹配远端文件时尝试 302。显式请求转码或限码率、无法匹配、取直链失败以及 HLS 等其他端点继续由 Navidrome 处理。直接连接 Navidrome 时，Navidrome 从 CD2 挂载读取音频。
 

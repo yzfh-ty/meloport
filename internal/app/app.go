@@ -216,6 +216,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 	var cloud *cloudRuntime
 	if cfg.Cloud115.Enabled {
 		cloud = newCloudRuntime(cfg.Cloud115, drive, store)
+		if cfg.Cloud115.NavidromePlaylistSync {
+			engine.UsePlaylistPublisher(cloud)
+		}
 		if command == "retag" {
 			engine.UseCloudStorage(cloud.sync)
 		} else {

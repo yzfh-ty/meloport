@@ -47,7 +47,12 @@ func (s *Service) Reconcile(ctx context.Context) error {
 			continue
 		}
 		if handedOff {
-			pending[file.TaskID] = append(pending[file.TaskID], file)
+			folder, _, pathErr := relativeName(file)
+			if pathErr != nil {
+				addError(pathErr)
+				continue
+			}
+			pending[folder] = append(pending[folder], file)
 		}
 	}
 	if len(pending) == 0 {
@@ -57,20 +62,39 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	if err != nil {
 		return errors.Join(firstError, fmt.Errorf("read 115 target directory: %w", err))
 	}
-	byName := indexByName(dirs)
-	for taskID, files := range pending {
+	for folder, files := range pending {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		matches := byName[taskID]
-		if len(matches) == 0 {
-			continue // CD2 has not created this remote task directory yet.
+		parentCID := s.opts.TargetCID
+		segments := strings.Split(folder, "/")
+		missing := false
+		for _, segment := range segments {
+			entries := dirs
+			if parentCID != s.opts.TargetCID {
+				var listErr error
+				entries, listErr = s.client.List(ctx, parentCID)
+				if listErr != nil {
+					addError(fmt.Errorf("read 115 collection directory: %w", listErr))
+					missing = true
+					break
+				}
+			}
+			matches := indexByName(entries)[segment]
+			if len(matches) == 0 {
+				missing = true // CD2 has not created this collection directory yet.
+				break
+			}
+			if len(matches) != 1 || !matches[0].IsDir || matches[0].ID == "" || matches[0].ParentID != parentCID {
+				addError(fmt.Errorf("ambiguous 115 directory for collection %s", folder))
+				missing = true
+				break
+			}
+			parentCID = matches[0].ID
 		}
-		if len(matches) != 1 || !matches[0].IsDir || matches[0].ID == "" || matches[0].ParentID != s.opts.TargetCID {
-			addError(fmt.Errorf("ambiguous 115 directory for task %s", taskID))
-			continue
+		if !missing {
+			addError(s.confirmDirectory(ctx, parentCID, files))
 		}
-		addError(s.confirmDirectory(ctx, matches[0].ID, files))
 	}
 	return firstError
 }
@@ -94,7 +118,7 @@ func (s *Service) confirmDirectory(ctx context.Context, cid string, files []stat
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		name, err := relativeName(file)
+		_, name, err := relativeName(file)
 		if err == nil {
 			matches := byName[name]
 			if len(matches) == 0 {
@@ -131,45 +155,59 @@ func (s *Service) confirm(ctx context.Context, file state.CloudFile, cid string,
 	return s.export(file)
 }
 
-func relativeName(file state.CloudFile) (string, error) {
-	task, name, ok := strings.Cut(file.RelativePath, "/")
-	if !ok || task != file.TaskID || !safeComponent(task) || !safeComponent(name) {
-		return "", errors.New("invalid exported 115 audio path")
+func relativeName(file state.CloudFile) (string, string, error) {
+	parts := strings.Split(file.RelativePath, "/")
+	if len(parts) == 2 {
+		if parts[0] != file.TaskID || !safeComponent(parts[0]) || !safeComponent(parts[1]) {
+			return "", "", errors.New("invalid exported 115 audio path")
+		}
+		return parts[0], parts[1], nil // Legacy exports remain repairable.
 	}
-	return name, nil
+	if len(parts) != 3 || parts[0] != file.Provider || !safeComponent(parts[0]) || !safeComponent(parts[1]) || !safeComponent(parts[2]) {
+		return "", "", errors.New("invalid exported 115 audio path")
+	}
+	return parts[0] + "/" + parts[1], parts[2], nil
 }
 
 func (s *Service) export(file state.CloudFile) error {
 	if s.opts.STRMDir == "" {
 		return nil
 	}
-	name, err := relativeName(file)
+	folder, name, err := relativeName(file)
 	if err != nil {
 		return err
 	}
 	body := strings.TrimRight(s.opts.MediaBaseURL, "/") + "/media/" + file.MediaID + "\n"
-	if err := writeSTRM(s.opts.STRMDir, file.TaskID, name+".strm", body); err != nil {
+	if err := writeSTRM(s.opts.STRMDir, folder, name+".strm", body); err != nil {
 		return fmt.Errorf("export STRM for task %s track %s: %w", file.TaskID, file.TrackID, err)
 	}
 	return nil
 }
 
-func writeSTRM(rootDir, taskID, name, body string) error {
-	if err := ensureTaskDirectory(rootDir, taskID); err != nil {
+func writeSTRM(rootDir, folder, name, body string) error {
+	parts := strings.Split(folder, "/")
+	if len(parts) < 1 || len(parts) > 2 || !safeComponent(name) {
+		return errors.New("invalid STRM collection path")
+	}
+	for _, part := range parts {
+		if !safeComponent(part) {
+			return errors.New("invalid STRM collection path")
+		}
+	}
+	if len(parts) == 1 {
+		if err := ensureTaskDirectory(rootDir, parts[0]); err != nil {
+			return err
+		}
+	} else if err := ensureCollectionDirectory(rootDir, parts[0], parts[1]); err != nil {
 		return err
 	}
-	root, err := os.OpenRoot(rootDir)
-	if err != nil {
-		return err
-	}
-	defer root.Close()
-	dest := filepath.Join(taskID, name)
-	if info, err := root.Lstat(dest); err == nil {
+	destPath := filepath.Join(rootDir, folder, name)
+	if info, err := os.Lstat(destPath); err == nil {
 		if !info.Mode().IsRegular() {
 			return errors.New("STRM destination must be a regular file")
 		}
 		if info.Size() == int64(len(body)) {
-			existing, err := root.Open(dest)
+			existing, err := os.Open(destPath)
 			if err != nil {
 				return err
 			}
@@ -182,12 +220,13 @@ func writeSTRM(rootDir, taskID, name, body string) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	temp := filepath.Join(taskID, ".meloport-"+randomID()+".tmp")
-	file, err := root.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	temp := ".meloport-" + randomID() + ".tmp"
+	tempPath := filepath.Join(rootDir, folder, temp)
+	file, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return err
 	}
-	defer root.Remove(temp)
+	defer os.Remove(tempPath)
 	defer file.Close()
 	if _, err := io.WriteString(file, body); err != nil {
 		return err
@@ -198,5 +237,5 @@ func writeSTRM(rootDir, taskID, name, body string) error {
 	if err := file.Close(); err != nil {
 		return err
 	}
-	return root.Rename(temp, dest)
+	return os.Rename(tempPath, destPath)
 }

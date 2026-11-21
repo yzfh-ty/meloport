@@ -214,6 +214,39 @@ func TestEditorRankingSourceFieldsUseExplicitYAMLShape(t *testing.T) {
 	}
 }
 
+func TestEditorTaskCanOverrideAutomaticQualityDowngrade(t *testing.T) {
+	_, editor := editorFixture(t, editorExample)
+	downgrade := false
+	if _, err := editor.Upsert("", TaskInput{ID: "rank-auto", Platform: "qq", SourceType: "ranking", SourceID: "26", AutoDowngrade: &downgrade, Enabled: true}, true); err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := editor.Tasks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *TaskInput
+	for i := range tasks {
+		if tasks[i].ID == "rank-auto" {
+			found = &tasks[i]
+		}
+	}
+	if found == nil || found.AutoDowngrade == nil || *found.AutoDowngrade {
+		t.Fatalf("explicit task downgrade override was not persisted: %+v", found)
+	}
+	if _, err := editor.Upsert("rank-auto", TaskInput{ID: "rank-auto", Platform: "qq", SourceType: "ranking", SourceID: "26", Enabled: true}, false); err != nil {
+		t.Fatal(err)
+	}
+	tasks, err = editor.Tasks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, task := range tasks {
+		if task.ID == "rank-auto" && task.AutoDowngrade != nil {
+			t.Fatalf("clearing task override should restore global inheritance: %+v", task)
+		}
+	}
+}
+
 func TestEditorPlaylistSourceKeepsLegacyYAMLShape(t *testing.T) {
 	path, editor := editorFixture(t, editorExample)
 	if _, err := editor.Upsert("", TaskInput{ID: "playlist-task", Platform: "netease", SourceType: "playlist", SourceID: "123", Enabled: true}, true); err != nil {

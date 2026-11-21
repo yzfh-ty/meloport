@@ -119,6 +119,12 @@ func (q *taskQueue) work(ctx context.Context, engine runner, logger *slog.Logger
 			if len(summary.TagWarnings) > 0 {
 				logger.Warn("audio metadata incomplete", "task", task.ID, "warnings", summary.TagWarnings)
 			}
+			if summary.PlaylistWarning != "" {
+				logger.Warn("Navidrome playlist sync incomplete", "task", task.ID, "warning", summary.PlaylistWarning)
+			}
+			if len(summary.QualityDowngrades) > 0 {
+				logger.Warn("audio quality downgraded", "task", task.ID, "tracks", summary.QualityDowngrades)
+			}
 			if err != nil {
 				logger.Error("sync finished", "task", task.ID, "status", summary.Status, "downloaded", summary.Downloaded, "skipped", summary.Skipped, "error", err.Error())
 				if chksz.IsAccountError(err) {

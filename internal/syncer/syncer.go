@@ -54,6 +54,10 @@ type CloudStorage interface {
 	Stage(context.Context, state.Download) (bool, error)
 }
 
+type PlaylistPublisher interface {
+	PublishPlaylist(context.Context, model.Task, model.Playlist, []state.Download) error
+}
+
 type legacyProvider struct{ Provider }
 
 func (p legacyProvider) Playlist(ctx context.Context, source, id string) (model.Playlist, error) {
@@ -83,25 +87,28 @@ type Engine struct {
 	downloader Downloader
 	store      *state.Store
 	cloud      CloudStorage
+	publisher  PlaylistPublisher
 	permit     chan struct{}
 }
 
 type Summary struct {
-	RunID          int64     `json:"run_id"`
-	TaskID         string    `json:"task_id"`
-	Status         string    `json:"status"`
-	PlaylistName   string    `json:"playlist_name"`
-	MetadataSource string    `json:"metadata_source,omitempty"`
-	Total          int       `json:"total"`
-	ReportedCount  int       `json:"reported_count"`
-	Downloaded     int       `json:"downloaded"`
-	Skipped        int       `json:"skipped"`
-	Failed         int       `json:"failed"`
-	Pending        int       `json:"pending"`
-	TagWarnings    []string  `json:"tag_warnings,omitempty"`
-	Error          string    `json:"error,omitempty"`
-	StartedAt      time.Time `json:"started_at"`
-	FinishedAt     time.Time `json:"finished_at"`
+	RunID             int64     `json:"run_id"`
+	TaskID            string    `json:"task_id"`
+	Status            string    `json:"status"`
+	PlaylistName      string    `json:"playlist_name"`
+	MetadataSource    string    `json:"metadata_source,omitempty"`
+	Total             int       `json:"total"`
+	ReportedCount     int       `json:"reported_count"`
+	Downloaded        int       `json:"downloaded"`
+	Skipped           int       `json:"skipped"`
+	Failed            int       `json:"failed"`
+	Pending           int       `json:"pending"`
+	TagWarnings       []string  `json:"tag_warnings,omitempty"`
+	QualityDowngrades []string  `json:"quality_downgrades,omitempty"`
+	PlaylistWarning   string    `json:"playlist_warning,omitempty"`
+	Error             string    `json:"error,omitempty"`
+	StartedAt         time.Time `json:"started_at"`
+	FinishedAt        time.Time `json:"finished_at"`
 }
 
 func New(provider Provider, downloader Downloader, store *state.Store) *Engine {
@@ -115,6 +122,9 @@ func NewWithSources(reader PlaylistReader, resolver AudioResolver, downloader Do
 
 // UseCloudStorage configures the handoff before the engine starts serving.
 func (e *Engine) UseCloudStorage(cloud CloudStorage) { e.cloud = cloud }
+
+// UsePlaylistPublisher enables best-effort publication after a complete sync.
+func (e *Engine) UsePlaylistPublisher(publisher PlaylistPublisher) { e.publisher = publisher }
 
 // Run serializes all tasks sharing this engine. Waiting is canceled on shutdown.
 func (e *Engine) Run(ctx context.Context, task model.Task) (summary Summary, returnedErr error) {
@@ -202,6 +212,7 @@ func (e *Engine) Run(ctx context.Context, task model.Task) (summary Summary, ret
 	summary.MetadataSource = playlist.FetchedVia
 	summary.ReportedCount = playlist.ReportedCount
 	tracks := uniqueTracks(playlist.Tracks)
+	collection := model.CollectionFolder(task.ID, playlist.Name)
 	summary.Total = len(tracks)
 	summary.Pending = len(tracks)
 	issues := make([]string, 0, 6)
@@ -263,6 +274,7 @@ func (e *Engine) Run(ctx context.Context, task model.Task) (summary Summary, ret
 				if !present {
 					return summary, errors.New("tagged download record is missing")
 				}
+				updated.Collection = collection
 				if err := e.stage(ctx, updated); err != nil {
 					if ctx.Err() != nil {
 						return summary, ctx.Err()
@@ -277,7 +289,16 @@ func (e *Engine) Run(ctx context.Context, task model.Task) (summary Summary, ret
 			summary.Pending--
 			continue
 		}
-		audio, err := e.resolver.Resolve(ctx, providerName, track, task.Quality)
+		var audio model.ResolvedTrack
+		actualQuality := task.Quality
+		if task.AutoDowngrade {
+			audio, actualQuality, err = ResolveWithFallback(ctx, e.resolver, providerName, track, task.Quality)
+		} else {
+			audio, err = e.resolver.Resolve(ctx, providerName, track, task.Quality)
+		}
+		if err == nil && actualQuality != task.Quality {
+			summary.QualityDowngrades = append(summary.QualityDowngrades, fmt.Sprintf("%s: %s", track.ID, actualQuality))
+		}
 		if track.CoverURL == "" {
 			track.CoverURL = model.CanonicalCoverURL(audio.CoverURL)
 		}
@@ -296,7 +317,8 @@ func (e *Engine) Run(ctx context.Context, task model.Task) (summary Summary, ret
 				addTagWarning(&summary.TagWarnings, track.ID, result.TagWarning)
 				item := state.Download{
 					TaskID: task.ID, Provider: providerName, TrackID: track.ID,
-					Path: result.Path, Size: result.Size, SHA256: result.SHA256,
+					Collection: collection,
+					Path:       result.Path, Size: result.Size, SHA256: result.SHA256,
 					Title: track.Name, Artists: track.Artists, Album: track.Album,
 					Metadata: track, TagFingerprint: fingerprint,
 				}
@@ -320,6 +342,15 @@ func (e *Engine) Run(ctx context.Context, task model.Task) (summary Summary, ret
 		if chksz.IsAccountError(err) || (errors.As(err, &apiError) && apiError.Status == 503) {
 			summary.Status = "failed"
 			return summary, fmt.Errorf("track %s: %w", track.ID, err)
+		}
+	}
+	if issueCount == 0 && e.publisher != nil {
+		items, err := e.store.ListDownloads(ctx, task.ID, providerName)
+		if err == nil {
+			err = e.publisher.PublishPlaylist(ctx, task, playlist, items)
+		}
+		if err != nil && ctx.Err() == nil {
+			summary.PlaylistWarning = bounded(err.Error(), 600)
 		}
 	}
 	if issueCount > 0 {

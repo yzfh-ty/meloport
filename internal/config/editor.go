@@ -21,21 +21,23 @@ var (
 // TaskInput contains editable values, not derived IDs, absolute paths or an
 // inherited schedule/quality. Empty optional strings retain inheritance.
 type TaskInput struct {
-	ID         string `json:"id"`
-	Platform   string `json:"platform"`
-	Playlist   string `json:"playlist"`
-	SourceType string `json:"source_type"`
-	SourceID   string `json:"source_id"`
-	Schedule   string `json:"schedule"`
-	Quality    string `json:"quality"`
-	Directory  string `json:"directory"`
-	Enabled    bool   `json:"enabled"`
+	ID            string `json:"id"`
+	Platform      string `json:"platform"`
+	Playlist      string `json:"playlist"`
+	SourceType    string `json:"source_type"`
+	SourceID      string `json:"source_id"`
+	Schedule      string `json:"schedule"`
+	Quality       string `json:"quality"`
+	AutoDowngrade *bool  `json:"auto_downgrade"`
+	Directory     string `json:"directory"`
+	Enabled       bool   `json:"enabled"`
 }
 
 type SettingsInput struct {
 	Timezone      string  `json:"timezone"`
 	Schedule      string  `json:"schedule"`
 	Quality       string  `json:"quality"`
+	AutoDowngrade bool    `json:"auto_downgrade"`
 	FallbackToAPI bool    `json:"fallback_to_api"`
 	MusicDir      *string `json:"music_dir,omitempty"`
 }
@@ -92,7 +94,7 @@ func (e *Editor) Tasks() ([]TaskInput, error) {
 				sourceID = normalized
 			}
 		}
-		out = append(out, TaskInput{ID: task.ID, Platform: task.Platform, Playlist: task.Playlist, SourceType: sourceType, SourceID: sourceID, Schedule: task.Schedule, Quality: task.Quality, Directory: task.Directory, Enabled: task.Enabled == nil || *task.Enabled})
+		out = append(out, TaskInput{ID: task.ID, Platform: task.Platform, Playlist: task.Playlist, SourceType: sourceType, SourceID: sourceID, Schedule: task.Schedule, Quality: task.Quality, AutoDowngrade: task.AutoDowngrade, Directory: task.Directory, Enabled: task.Enabled == nil || *task.Enabled})
 	}
 	return out, nil
 }
@@ -176,6 +178,7 @@ func (e *Editor) Settings(input SettingsInput) (*Config, error) {
 		setScalar(root, "timezone", input.Timezone, "!!str")
 		setScalar(root, "schedule", input.Schedule, "!!str")
 		setScalar(root, "quality", input.Quality, "!!str")
+		setScalar(root, "auto_downgrade", boolText(input.AutoDowngrade), "!!bool")
 		metadata := mappingField(root, "metadata")
 		if metadata == nil {
 			if existing := field(root, "metadata"); existing != nil && existing.Tag != "!!null" {
@@ -332,6 +335,11 @@ func writeTask(node *yaml.Node, input TaskInput) {
 	}
 	setOptional(node, "schedule", input.Schedule)
 	setOptional(node, "quality", input.Quality)
+	if input.AutoDowngrade == nil {
+		deleteField(node, "auto_downgrade")
+	} else {
+		setScalar(node, "auto_downgrade", boolText(*input.AutoDowngrade), "!!bool")
+	}
 	setOptional(node, "directory", input.Directory)
 	setScalar(node, "enabled", boolText(input.Enabled), "!!bool")
 }

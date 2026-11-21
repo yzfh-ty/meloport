@@ -31,6 +31,14 @@ func TestCloud115ConfigurationKeepsCD2AwayFromWorkFiles(t *testing.T) {
 			}
 		})
 	}
+	localNavidrome := cloud + "  navidrome_url: http://127.0.0.1:4533\n  navidrome_mount_root: /music/115\n  navidrome_playlist_sync: true\n  navidrome_username: sync\ntasks: []\n"
+	if _, err := Load(writeConfig(t, localNavidrome)); err != nil {
+		t.Fatalf("loopback HTTP Navidrome should remain supported: %v", err)
+	}
+	remoteNavidrome := cloud + "  navidrome_url: http://music.example.com:4533\n  navidrome_mount_root: /music/115\n  navidrome_playlist_sync: true\n  navidrome_username: sync\ntasks: []\n"
+	if _, err := Load(writeConfig(t, remoteNavidrome)); err == nil {
+		t.Fatal("accepted cleartext credentials to a remote Navidrome server")
+	}
 	const private = "not-a-real-115-token"
 	_, err = Load(writeConfig(t, cloud+"  access_token: "+private+"\n"))
 	if err == nil || strings.Contains(err.Error(), private) {

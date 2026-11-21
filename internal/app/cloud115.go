@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -14,14 +15,19 @@ import (
 	"meloport/internal/cloudsync"
 	"meloport/internal/config"
 	"meloport/internal/media"
+	"meloport/internal/model"
+	"meloport/internal/navidrome"
 	"meloport/internal/state"
 )
 
 type cloudRuntime struct {
-	sync    *cloudsync.Service
-	handler http.Handler
-	drive   *cloudDrive
-	login   *cloudLogin
+	sync            *cloudsync.Service
+	handler         http.Handler
+	drive           *cloudDrive
+	login           *cloudLogin
+	navidrome       *navidrome.Client
+	navidromeConfig config.Cloud115
+	navidromeReady  bool
 }
 
 func newCloudRuntime(cfg config.Cloud115, client *cloud115.Client, store *state.Store) *cloudRuntime {
@@ -32,14 +38,66 @@ func newCloudRuntime(cfg config.Cloud115, client *cloud115.Client, store *state.
 	service := cloudsync.New(store, drive, cloudsync.Options{
 		TargetCID: cfg.TargetCID, StagingDir: cfg.StagingDir, STRMDir: cfg.STRMDir, MediaBaseURL: cfg.MediaBaseURL,
 	})
+	var navidromeClient *navidrome.Client
+	var navidromeReady bool
+	if cfg.NavidromePlaylistSync {
+		if password := optionalEnv(cfg.NavidromePasswordEnv); password != "" {
+			navidromeClient, _ = navidrome.New(navidrome.Options{
+				BaseURL: cfg.NavidromeURL, Username: cfg.NavidromeUsername, Password: password,
+				MountRoot: cfg.NavidromeMountRoot, Timeout: cfg.Timeout.Duration,
+			})
+			navidromeReady = navidromeClient != nil
+		}
+	}
 	return &cloudRuntime{
 		sync: service, drive: drive,
+		navidrome: navidromeClient, navidromeConfig: cfg, navidromeReady: navidromeReady,
 		handler: media.New(cloudLookup{store, cfg.TargetCID}, drive, cfg.NavidromeURL, cfg.NavidromeMountRoot),
 		login: &cloudLogin{
 			auth:   cloud115.NewAuthClient(cfg.Timeout.Duration),
 			client: func(token string) (cloudDriveClient, error) { return cloud115.New(token, cfg.Timeout.Duration) },
 		},
 	}
+}
+
+func (c *cloudRuntime) PublishPlaylist(ctx context.Context, task model.Task, playlist model.Playlist, downloads []state.Download) error {
+	if !c.navidromeConfig.NavidromePlaylistSync || task.SourceType != "ranking" {
+		return nil
+	}
+	if c.navidrome == nil {
+		return fmt.Errorf("Navidrome playlist sync credentials are unavailable or invalid; check %s", c.navidromeConfig.NavidromePasswordEnv)
+	}
+	provider := task.Platform
+	if provider == "" {
+		provider = "netease"
+	}
+	collection := model.CollectionFolder(task.ID, playlist.Name)
+	byTrack := make(map[string]state.Download, len(downloads))
+	for _, item := range downloads {
+		if item.Provider == provider {
+			byTrack[item.TrackID] = item
+		}
+	}
+	candidates := make([]navidrome.Candidate, 0, len(playlist.Tracks))
+	for _, track := range playlist.Tracks {
+		item, found := byTrack[track.ID]
+		if !found || !filepath.IsAbs(item.Path) || filepath.Base(item.Path) == "." {
+			return fmt.Errorf("track %s has no saved file for Navidrome publication", track.ID)
+		}
+		candidates = append(candidates, navidrome.Candidate{
+			Title: track.Name, Artists: track.Artists, Album: track.Album,
+			RelativePath: filepath.ToSlash(filepath.Join(provider, collection, filepath.Base(item.Path))),
+		})
+	}
+	platformName := map[string]string{"netease": "网易云音乐", "qq": "QQ音乐", "kugou": "酷狗音乐"}[provider]
+	if platformName == "" {
+		return errors.New("unsupported Navidrome playlist platform")
+	}
+	name := fmt.Sprintf("%s - %s [%s]", platformName, playlist.Name, task.ID)
+	if err := c.navidrome.Publish(ctx, name, candidates); err != nil {
+		return fmt.Errorf("publish Navidrome playlist %q: %w", name, err)
+	}
+	return nil
 }
 
 var errCloudLoginRequired = errors.New("sign in to 115 in Meloport or set the configured access token environment variable")
@@ -167,22 +225,30 @@ func checkCloud(ctx context.Context, client *cloud115.Client, cid string, downUR
 	}
 	found, err := checkFile(files)
 	if !found {
-		// CD2 normally preserves one subdirectory per task. Bound the check
-		// so pointing it at an empty library does not scan the entire account.
+		// New uploads use platform/chart directories. Keep this bounded so a
+		// check against an empty account never walks the whole drive.
 		scanned := 0
-		for _, dir := range files {
-			if !dir.IsDir || scanned == 10 {
-				continue
+		var scan func([]cloud115.File, int) (bool, error)
+		scan = func(entries []cloud115.File, depth int) (bool, error) {
+			if found, err := checkFile(entries); found || err != nil || depth == 0 {
+				return found, err
 			}
-			scanned++
-			children, listErr := client.List(ctx, dir.ID)
-			if listErr != nil {
-				return fmt.Errorf("list 115 task directory: %w", listErr)
+			for _, dir := range entries {
+				if !dir.IsDir || scanned >= 30 {
+					continue
+				}
+				scanned++
+				children, listErr := client.List(ctx, dir.ID)
+				if listErr != nil {
+					return false, fmt.Errorf("list 115 collection directory: %w", listErr)
+				}
+				if found, err := scan(children, depth-1); found || err != nil {
+					return found, err
+				}
 			}
-			if found, err = checkFile(children); found {
-				break
-			}
+			return false, nil
 		}
+		found, err = scan(files, 3)
 	}
 	if err != nil {
 		return fmt.Errorf("resolve 115 download URL: %w", err)

@@ -105,7 +105,12 @@ func (s *Service) Stage(ctx context.Context, item state.Download) (bool, error) 
 		}
 	}
 	name := filepath.Base(item.Path)
-	if !safeComponent(item.TaskID) || !safeComponent(name) || !filepath.IsAbs(item.Path) || item.Size <= 0 || item.Size == 1<<63-1 {
+	collection := item.Collection
+	legacyFolder := collection == ""
+	if legacyFolder {
+		collection = item.TaskID // Legacy callers retain their old folder layout.
+	}
+	if (!legacyFolder && !safeComponent(item.Provider)) || !safeComponent(collection) || !safeComponent(name) || !filepath.IsAbs(item.Path) || item.Size <= 0 || item.Size == 1<<63-1 {
 		return false, errors.New("invalid 115 staging audio record")
 	}
 	if item.TagPending || item.TagFingerprint == "" {
@@ -115,10 +120,20 @@ func (s *Service) Stage(ctx context.Context, item state.Download) (bool, error) 
 	if err != nil {
 		return false, err
 	}
-	if err := ensureTaskDirectory(s.opts.StagingDir, item.TaskID); err != nil {
-		return false, fmt.Errorf("prepare CD2 staging directory: %w", err)
+	folder := collection
+	if legacyFolder {
+		if err := ensureTaskDirectory(s.opts.StagingDir, collection); err != nil {
+			return false, fmt.Errorf("prepare CD2 staging directory: %w", err)
+		}
+	} else {
+		folder = filepath.Join(item.Provider, collection)
 	}
-	stagedPath := filepath.Join(s.opts.StagingDir, item.TaskID, name)
+	if !legacyFolder {
+		if err := ensureCollectionDirectory(s.opts.StagingDir, item.Provider, collection); err != nil {
+			return false, fmt.Errorf("prepare CD2 staging directory: %w", err)
+		}
+	}
+	stagedPath := filepath.Join(s.opts.StagingDir, folder, name)
 	if _, err := os.Lstat(stagedPath); !errors.Is(err, os.ErrNotExist) {
 		if err == nil {
 			return false, errors.New("CD2 staging already contains the audio filename; working file was preserved")
@@ -127,7 +142,7 @@ func (s *Service) Stage(ctx context.Context, item state.Download) (bool, error) 
 	}
 	file, err := s.store.SaveCloudIntent(ctx, state.CloudFile{
 		RootCID: s.opts.TargetCID, TaskID: item.TaskID, Provider: item.Provider, TrackID: item.TrackID,
-		LocalPath: item.Path, StagingPath: stagedPath, RelativePath: item.TaskID + "/" + name,
+		LocalPath: item.Path, StagingPath: stagedPath, RelativePath: filepath.ToSlash(filepath.Join(folder, name)),
 		Size: item.Size, SHA1: sha1sum, MediaID: randomID(),
 	})
 	if err != nil {
@@ -195,13 +210,47 @@ func ensureTaskDirectory(rootDir, taskID string) error {
 	if err != nil {
 		return err
 	}
-	defer root.Close()
+	defer func() {
+		if root != nil {
+			_ = root.Close()
+		}
+	}()
 	if err := root.Mkdir(taskID, 0o750); err != nil && !errors.Is(err, os.ErrExist) {
 		return err
 	}
 	info, err := root.Lstat(taskID)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return errors.New("task output path must be a real directory")
+	}
+	return nil
+}
+
+func ensureCollectionDirectory(rootDir, platform, collection string) error {
+	if !filepath.IsAbs(rootDir) || !safeComponent(platform) || !safeComponent(collection) {
+		return errors.New("invalid cloud collection path")
+	}
+	if err := os.MkdirAll(rootDir, 0o750); err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(rootDir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	for _, name := range []string{platform, collection} {
+		if err := root.Mkdir(name, 0o750); err != nil && !errors.Is(err, os.ErrExist) {
+			return err
+		}
+		info, err := root.Lstat(name)
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return errors.New("cloud collection path must contain real directories")
+		}
+		next, err := root.OpenRoot(name)
+		if err != nil {
+			return err
+		}
+		_ = root.Close()
+		root = next
 	}
 	return nil
 }

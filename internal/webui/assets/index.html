@@ -848,6 +848,9 @@
                     <div class="form-grid">
                       <div class="field"><label for="cloud-navidrome-url">Navidrome 服务地址</label><input id="cloud-navidrome-url" name="navidrome_url" type="url" maxlength="2048" placeholder="http://127.0.0.1:4533" /></div>
                       <div class="field"><label for="cloud-navidrome-mount-root">Navidrome 中的挂载路径</label><input id="cloud-navidrome-mount-root" name="navidrome_mount_root" type="text" maxlength="4096" placeholder="/music/115" /></div>
+                      <div class="field"><label for="cloud-navidrome-username">Navidrome 用户名</label><input id="cloud-navidrome-username" name="navidrome_username" type="text" maxlength="255" autocomplete="username" /></div>
+                      <div class="field"><label for="cloud-navidrome-password-env">密码环境变量名</label><input id="cloud-navidrome-password-env" name="navidrome_password_env" type="text" maxlength="128" placeholder="MELOPORT_NAVIDROME_PASSWORD" autocomplete="off" /></div>
+                      <label class="checkbox-field" for="cloud-navidrome-playlist-sync"><input id="cloud-navidrome-playlist-sync" name="navidrome_playlist_sync" type="checkbox" /><span><strong>同步创建 Navidrome 歌单</strong><small>按平台和榜单分类；Navidrome 扫描完成后再创建或更新歌单。远程服务需使用 HTTPS。</small></span></label>
                     </div>
                   </details>
                   <details class="advanced-fields cloud-advanced">
@@ -968,6 +971,10 @@
                       <p class="field-hint">
                         按平台映射相应音质，不会重新下载已完整保存的文件。
                       </p>
+                      <label class="checkbox-field" for="settings-auto-downgrade">
+                        <input id="settings-auto-downgrade" name="auto_downgrade" type="checkbox" />
+                        <span><strong>音质不可用时自动降级</strong><small>只在接口明确提示音质不可用时尝试较低档；账号、额度和网络错误不会重试。</small></span>
+                      </label>
                     </div>
                     <label class="checkbox-field" for="settings-fallback"
                       ><input
@@ -1169,6 +1176,15 @@
                     <option value="">继承全局音质</option>
                   </select>
                   <p class="field-hint">改变音质不会覆盖已下载歌曲。</p>
+                </div>
+                <div class="field">
+                  <label for="task-auto-downgrade">音质不可用时</label>
+                  <select id="task-auto-downgrade" name="auto_downgrade">
+                    <option value="">继承全局规则</option>
+                    <option value="true">自动尝试较低音质</option>
+                    <option value="false">不自动降级</option>
+                  </select>
+                  <p class="field-hint">只在接口明确提示所选音质不可用时降级。</p>
                 </div>
               </div>
               <div class="field">

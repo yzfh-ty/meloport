@@ -45,6 +45,9 @@ tasks:
 	if cfg.Timezone != "Asia/Shanghai" || cfg.API.MinInterval.Duration != 3100*time.Millisecond || cfg.RunOnStart {
 		t.Fatal("unsafe defaults")
 	}
+	if !cfg.AutoDowngrade || cfg.Tasks[0].Model().AutoDowngrade != cfg.AutoDowngrade {
+		t.Fatal("automatic quality downgrade should be enabled by default and inherited by tasks")
+	}
 	schedule, err := ParseSchedule(cfg.Tasks[0].Schedule)
 	if err != nil {
 		t.Fatal(err)

@@ -2,6 +2,7 @@
 timezone: Asia/Shanghai
 schedule: "0 3 * * *" # Default: daily at 03:00, standard five-field cron.
 quality: lossless
+auto_downgrade: true # Retry lower native tiers only when the requested tier is explicitly unavailable.
 run_on_start: false # No immediate API requests when starting the scheduler.
 
 api:
@@ -45,6 +46,9 @@ cloud115:
   timeout: 15s
   # navidrome_url: "http://127.0.0.1:4533"
   # navidrome_mount_root: "/music/115" # Target directory as seen by the music server.
+  # navidrome_playlist_sync: false # Publish a platform playlist after the full collection is indexed.
+  # navidrome_username: "meloport"
+  # navidrome_password_env: MELOPORT_NAVIDROME_PASSWORD # Password is read from this process environment variable.
 
 tasks:
   - id: favorites

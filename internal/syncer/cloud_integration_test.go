@@ -54,12 +54,14 @@ func TestCloudSyncSurvivesCD2CleanupAndRestart(t *testing.T) {
 	database := filepath.Join(root, "cloud.db")
 	const rootCID, taskCID = "100", "200"
 	task := model.Task{ID: "favorites", Platform: "netease", PlaylistID: "123", Quality: "lossless", Directory: filepath.Join(root, "work")}
+	collection := model.CollectionFolder(task.ID, "收藏")
 	opts := cloudsync.Options{
 		TargetCID: rootCID, StagingDir: filepath.Join(root, "cd2"), STRMDir: filepath.Join(root, "strm"),
 		MediaBaseURL: "https://music.example.test",
 	}
 	remote := cloudUploadFixture{
-		rootCID: {{ID: taskCID, ParentID: rootCID, Name: task.ID, IsDir: true}},
+		rootCID: {{ID: "150", ParentID: rootCID, Name: task.Platform, IsDir: true}},
+		"150":   {{ID: taskCID, ParentID: "150", Name: collection, IsDir: true}},
 		taskCID: nil,
 	}
 	provider := &fakeProvider{playlist: playlist("1", "2")}
@@ -82,13 +84,13 @@ func TestCloudSyncSurvivesCD2CleanupAndRestart(t *testing.T) {
 		t.Fatalf("first sync = %+v, %v", first, err)
 	}
 	const readyName, incompleteName = "netease-1.flac", "netease-2.flac"
-	stagedPath := filepath.Join(opts.StagingDir, task.ID, readyName)
+	stagedPath := filepath.Join(opts.StagingDir, task.Platform, collection, readyName)
 	staged, err := os.ReadFile(stagedPath)
 	if err != nil || string(staged) != "fLaC audio fixture for 1" {
 		t.Fatalf("read staged audio = %q, %v", staged, err)
 	}
 	assertCloudTestPathMissing(t, filepath.Join(task.Directory, readyName))
-	assertCloudTestPathMissing(t, filepath.Join(opts.StagingDir, task.ID, incompleteName))
+	assertCloudTestPathMissing(t, filepath.Join(opts.StagingDir, task.Platform, collection, incompleteName))
 	if _, err := os.Stat(filepath.Join(task.Directory, incompleteName)); err != nil {
 		t.Fatalf("audio with unfinished tags was not retained in the working directory: %v", err)
 	}
@@ -98,7 +100,7 @@ func TestCloudSyncSurvivesCD2CleanupAndRestart(t *testing.T) {
 	if err := service.Reconcile(ctx); err != nil {
 		t.Fatal(err)
 	}
-	strmPath := filepath.Join(opts.STRMDir, task.ID, readyName+".strm")
+	strmPath := filepath.Join(opts.STRMDir, task.Platform, collection, readyName+".strm")
 	assertCloudTestPathMissing(t, strmPath)
 	provider.playlist = playlist("1")
 	assertSkipped := func(who string) {

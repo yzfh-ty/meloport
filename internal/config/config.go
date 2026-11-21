@@ -46,18 +46,19 @@ func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
 }
 
 type Config struct {
-	Timezone   string         `yaml:"timezone"`
-	Schedule   string         `yaml:"schedule"`
-	Quality    string         `yaml:"quality"`
-	RunOnStart bool           `yaml:"run_on_start"`
-	API        API            `yaml:"api"`
-	Metadata   Metadata       `yaml:"metadata"`
-	Storage    Storage        `yaml:"storage"`
-	Download   Download       `yaml:"download"`
-	Server     Server         `yaml:"server"`
-	Cloud115   Cloud115       `yaml:"cloud115"`
-	Tasks      []Task         `yaml:"tasks"`
-	Location   *time.Location `yaml:"-"`
+	Timezone      string         `yaml:"timezone"`
+	Schedule      string         `yaml:"schedule"`
+	Quality       string         `yaml:"quality"`
+	AutoDowngrade bool           `yaml:"auto_downgrade"`
+	RunOnStart    bool           `yaml:"run_on_start"`
+	API           API            `yaml:"api"`
+	Metadata      Metadata       `yaml:"metadata"`
+	Storage       Storage        `yaml:"storage"`
+	Download      Download       `yaml:"download"`
+	Server        Server         `yaml:"server"`
+	Cloud115      Cloud115       `yaml:"cloud115"`
+	Tasks         []Task         `yaml:"tasks"`
+	Location      *time.Location `yaml:"-"`
 }
 
 type API struct {
@@ -92,16 +93,17 @@ type Server struct {
 }
 
 type Task struct {
-	ID         string `yaml:"id"`
-	Platform   string `yaml:"platform"`
-	Playlist   string `yaml:"playlist"`
-	SourceType string `yaml:"source_type"`
-	SourceID   string `yaml:"source_id"`
-	Schedule   string `yaml:"schedule"`
-	Quality    string `yaml:"quality"`
-	Directory  string `yaml:"directory"`
-	Enabled    *bool  `yaml:"enabled"`
-	PlaylistID string `yaml:"-"`
+	ID            string `yaml:"id"`
+	Platform      string `yaml:"platform"`
+	Playlist      string `yaml:"playlist"`
+	SourceType    string `yaml:"source_type"`
+	SourceID      string `yaml:"source_id"`
+	Schedule      string `yaml:"schedule"`
+	Quality       string `yaml:"quality"`
+	AutoDowngrade *bool  `yaml:"auto_downgrade"`
+	Directory     string `yaml:"directory"`
+	Enabled       *bool  `yaml:"enabled"`
+	PlaylistID    string `yaml:"-"`
 }
 
 func (t Task) IsEnabled() bool { return t.Enabled == nil || *t.Enabled }
@@ -115,12 +117,12 @@ func (t Task) Model() model.Task {
 	if sourceType == "" {
 		sourceType = "playlist"
 	}
-	return model.Task{ID: t.ID, SourceType: sourceType, SourceID: sourceID, PlaylistID: t.PlaylistID, Platform: t.Platform, Quality: t.Quality, Directory: t.Directory}
+	return model.Task{ID: t.ID, SourceType: sourceType, SourceID: sourceID, PlaylistID: t.PlaylistID, Platform: t.Platform, Quality: t.Quality, AutoDowngrade: t.AutoDowngrade != nil && *t.AutoDowngrade, Directory: t.Directory}
 }
 
 func defaults() Config {
 	return Config{
-		Timezone: "Asia/Shanghai", Schedule: DefaultSchedule, Quality: "lossless",
+		Timezone: "Asia/Shanghai", Schedule: DefaultSchedule, Quality: "lossless", AutoDowngrade: true,
 		API:      API{BaseURL: "https://api.chksz.com", KeyEnv: "CHKSZ_API_KEY", Timeout: Duration{30 * time.Second}, MinInterval: Duration{3100 * time.Millisecond}},
 		Metadata: Metadata{Timeout: Duration{30 * time.Second}, MinInterval: Duration{time.Second}, FallbackToAPI: true, NeteaseCookieEnv: "MELOPORT_NETEASE_COOKIE", QQCookieEnv: "MELOPORT_QQ_COOKIE", KugouCookieEnv: "MELOPORT_KUGOU_COOKIE"},
 		Storage:  Storage{Database: "data/meloport.db", MusicDir: "data/music"},
@@ -273,6 +275,10 @@ func (c *Config) validate(baseDir string) error {
 		}
 		if t.Quality == "" {
 			t.Quality = effectiveQuality(t.Platform, c.Quality)
+		}
+		if t.AutoDowngrade == nil {
+			autoDowngrade := c.AutoDowngrade
+			t.AutoDowngrade = &autoDowngrade
 		}
 		if !validTaskQuality(t.Platform, t.Quality) {
 			return fmt.Errorf("task %s: unsupported native platform quality", t.ID)

@@ -18,7 +18,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 3
+const schemaVersion = 4
 
 type Store struct {
 	db *sql.DB
@@ -27,6 +27,7 @@ type Store struct {
 type Download struct {
 	TaskID         string      `json:"task_id"`
 	Provider       string      `json:"provider"`
+	Collection     string      `json:"-"` // Stable chart folder used for cloud handoff.
 	TrackID        string      `json:"track_id"`
 	Path           string      `json:"path"`
 	Size           int64       `json:"size"`
@@ -185,6 +186,20 @@ func (s *Store) migrate(ctx context.Context) error {
 			return fmt.Errorf("migrate 115 file state: %w", err)
 		}
 	}
+	if version < 4 {
+		var hasCollection bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pragma_table_info('downloads') WHERE name = 'collection')`).Scan(&hasCollection); err != nil {
+			return fmt.Errorf("inspect chart folder state: %w", err)
+		}
+		if !hasCollection {
+			if _, err := tx.ExecContext(ctx, `ALTER TABLE downloads ADD COLUMN collection TEXT NOT NULL DEFAULT ''`); err != nil {
+				return fmt.Errorf("migrate chart folder state: %w", err)
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `PRAGMA user_version = 4`); err != nil {
+			return fmt.Errorf("record chart folder migration: %w", err)
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit database migration: %w", err)
 	}
@@ -206,14 +221,14 @@ func (s *Store) RecoverInterrupted(ctx context.Context) error {
 	return nil
 }
 
-const downloadColumns = `task_id, provider, track_id, path, size, sha256, title, artists, album, updated_at, metadata, tag_fingerprint, tag_pending`
+const downloadColumns = `task_id, provider, track_id, path, size, sha256, title, artists, album, updated_at, metadata, tag_fingerprint, tag_pending, collection`
 
 type rowScanner interface{ Scan(...any) error }
 
 func scanDownload(row rowScanner) (Download, error) {
 	var item Download
 	var artists, metadata, updated string
-	err := row.Scan(&item.TaskID, &item.Provider, &item.TrackID, &item.Path, &item.Size, &item.SHA256, &item.Title, &artists, &item.Album, &updated, &metadata, &item.TagFingerprint, &item.TagPending)
+	err := row.Scan(&item.TaskID, &item.Provider, &item.TrackID, &item.Path, &item.Size, &item.SHA256, &item.Title, &artists, &item.Album, &updated, &metadata, &item.TagFingerprint, &item.TagPending, &item.Collection)
 	if err != nil {
 		return Download{}, fmt.Errorf("read download record: %w", err)
 	}
@@ -267,14 +282,15 @@ func saveDownload(ctx context.Context, db execer, item Download) error {
 		item.UpdatedAt = time.Now().UTC()
 	}
 	_, err = db.ExecContext(ctx, `INSERT INTO downloads
-		(task_id, provider, track_id, path, size, sha256, title, artists, album, updated_at, metadata, tag_fingerprint, tag_pending)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(task_id, provider, track_id, path, size, sha256, title, artists, album, updated_at, metadata, tag_fingerprint, tag_pending, collection)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(task_id, provider, track_id) DO UPDATE SET
 		path = excluded.path, size = excluded.size, sha256 = excluded.sha256, title = excluded.title,
 		artists = excluded.artists, album = excluded.album, updated_at = excluded.updated_at,
-		metadata = excluded.metadata, tag_fingerprint = excluded.tag_fingerprint, tag_pending = excluded.tag_pending`,
+		metadata = excluded.metadata, tag_fingerprint = excluded.tag_fingerprint, tag_pending = excluded.tag_pending,
+		collection = excluded.collection`,
 		item.TaskID, item.Provider, item.TrackID, item.Path, item.Size, item.SHA256, item.Title,
-		string(artists), item.Album, item.UpdatedAt.UTC().Format(time.RFC3339Nano), string(metadata), item.TagFingerprint, item.TagPending)
+		string(artists), item.Album, item.UpdatedAt.UTC().Format(time.RFC3339Nano), string(metadata), item.TagFingerprint, item.TagPending, item.Collection)
 	if err != nil {
 		return fmt.Errorf("save download record: %w", err)
 	}

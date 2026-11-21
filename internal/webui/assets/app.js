@@ -323,7 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function taskInput(task) {
     const sourceType = task.source_type || 'playlist';
-    return { id: String(task.id), platform: task.platform || 'netease', source_type: sourceType, source_id: sourceType === 'ranking' ? task.source_id || '' : '', playlist: task.playlist || '', schedule: task.schedule || '', quality: task.quality || '', directory: task.directory || '', enabled: Boolean(task.enabled) };
+    return { id: String(task.id), platform: task.platform || 'netease', source_type: sourceType, source_id: sourceType === 'ranking' ? task.source_id || '' : '', playlist: task.playlist || '', schedule: task.schedule || '', quality: task.quality || '', auto_downgrade: task.auto_downgrade ?? null, directory: task.directory || '', enabled: Boolean(task.enabled) };
   }
 
   function cell(label) {
@@ -604,6 +604,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('task-source-id').value = task ? task.source_id || '' : preset ? preset.sourceId : '';
     setSchedule('task', task ? task.schedule || '' : '');
     $('task-directory').value = task ? task.directory || '' : '';
+    $('task-auto-downgrade').value = task?.auto_downgrade == null ? '' : String(Boolean(task.auto_downgrade));
     $('task-enabled').checked = task ? Boolean(task.enabled) : true;
     $('task-form').querySelector('.advanced-fields').open = Boolean(task && (task.schedule || task.quality || task.directory));
     renderTaskQuality($('task-platform').value, task ? task.quality || '' : '');
@@ -621,7 +622,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const input = {
       id: $('task-id').value.trim(), platform: $('task-platform').value, source_type: $('task-source-type').value,
       source_id: $('task-source-id').value.trim(), playlist: $('task-playlist').value.trim(),
-      schedule: '', quality: $('task-quality').value, directory: $('task-directory').value.trim(), enabled: $('task-enabled').checked
+      schedule: '', quality: $('task-quality').value,
+      auto_downgrade: $('task-auto-downgrade').value === '' ? null : $('task-auto-downgrade').value === 'true',
+      directory: $('task-directory').value.trim(), enabled: $('task-enabled').checked
     };
     const errors = [];
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(input.id) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(input.id)) errors.push({ field: 'task-id', message: '任务标识需为 1–64 位字母、数字、下划线或短横线，并避免系统保留名称。' });
@@ -792,6 +795,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('settings-music-dir').value = data.music_dir || '';
     text('settings-music-dir-resolved', data.music_dir_resolved ? `当前实际目录：${data.music_dir_resolved}` : '');
     $('settings-quality').value = data.quality || 'lossless';
+    $('settings-auto-downgrade').checked = Boolean(data.auto_downgrade);
     $('settings-fallback').checked = Boolean(data.fallback_to_api);
     $('settings-fields').disabled = state.busy.has('settings');
     $('settings-submit').disabled = state.busy.has('settings');
@@ -801,7 +805,7 @@ document.addEventListener('DOMContentLoaded', () => {
     event.preventDefault();
     if (state.busy.has('settings')) return;
     clearErrors('settings');
-    const input = { timezone: $('settings-timezone').value.trim(), schedule: '', music_dir: $('settings-music-dir').value.trim(), quality: $('settings-quality').value, fallback_to_api: $('settings-fallback').checked };
+    const input = { timezone: $('settings-timezone').value.trim(), schedule: '', music_dir: $('settings-music-dir').value.trim(), quality: $('settings-quality').value, auto_downgrade: $('settings-auto-downgrade').checked, fallback_to_api: $('settings-fallback').checked };
     const errors = [];
     if (!input.timezone) errors.push({ field: 'settings-timezone', message: '请填写 IANA 时区名称。' });
     if (!input.music_dir) errors.push({ field: 'settings-music-dir', message: '请填写下载根目录。' });
@@ -1347,7 +1351,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('cloud-save').disabled = Boolean(operation) || !dirty;
     $('cloud-target-cid').required = $('cloud-enabled').checked;
     text('cloud-settings-note', dirty ? '有未保存的更改。' : '设置保存后，在下次启动时生效。');
-    text('cloud-navidrome-status', data.settings.navidrome_url ? '已配置' : '可选');
+    text('cloud-navidrome-status', data.settings.navidrome_playlist_sync ? '歌单同步已启用' : data.settings.navidrome_url ? '已配置' : '可选');
     for (const key of ['pending', 'confirmed', 'exported']) text(`cloud-${key}`, number(data.stats?.[key]));
     renderCloudFiles();
   }
@@ -1443,6 +1447,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const form = event.currentTarget;
     const settings = Object.fromEntries(Array.from(new FormData(form), ([key, value]) => [key, value.trim()]));
     settings.enabled = $('cloud-enabled').checked;
+    settings.navidrome_playlist_sync = $('cloud-navidrome-playlist-sync').checked;
     if (settings.enabled && !/^[1-9][0-9]{0,19}$/.test(settings.target_cid)) {
       cloudFeedback('cloud-settings-error', '启用 115 时，请填写非根目录的数字 CID。');
       $('cloud-target-cid').focus();
@@ -1453,6 +1458,12 @@ document.addEventListener('DOMContentLoaded', () => {
       missing.closest('details').open = true;
       cloudFeedback('cloud-settings-error', '请同时填写 Navidrome 服务地址与挂载路径。');
       missing.focus();
+      return;
+    }
+    if (settings.navidrome_playlist_sync && (!settings.navidrome_url || !settings.navidrome_mount_root || !settings.navidrome_username || !settings.navidrome_password_env)) {
+      $('cloud-navidrome-url').closest('details').open = true;
+      cloudFeedback('cloud-settings-error', '启用歌单同步时，请填写 Navidrome 地址、挂载路径、用户名和密码环境变量名。');
+      $('cloud-navidrome-username').focus();
       return;
     }
     cloudAction($('cloud-save'), 'save', '正在保存', async () => {

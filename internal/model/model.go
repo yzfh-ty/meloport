@@ -4,6 +4,8 @@ package model
 import (
 	"net/url"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 type Track struct {
@@ -80,8 +82,42 @@ type Task struct {
 	SourceID   string
 	// PlaylistID is retained for callers constructing legacy tasks directly.
 	// Configuration-backed tasks always populate SourceID as the canonical value.
-	PlaylistID string
-	Platform   string
-	Quality    string
-	Directory  string
+	PlaylistID    string
+	Platform      string
+	Quality       string
+	AutoDowngrade bool
+	Directory     string
+}
+
+// CollectionFolder returns a portable, task-stable folder name that retains
+// the source chart or playlist title while preventing same-title collisions.
+func CollectionFolder(taskID, title string) string {
+	var b strings.Builder
+	separator := false
+	for _, r := range strings.TrimSpace(title) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			extra := utf8.RuneLen(r)
+			if separator && b.Len() > 0 {
+				extra++
+			}
+			if b.Len()+extra > 96 {
+				break
+			}
+			if separator && b.Len() > 0 {
+				b.WriteByte('-')
+			}
+			b.WriteRune(r)
+			separator = false
+			continue
+		}
+		separator = true
+	}
+	name := strings.Trim(b.String(), "-.")
+	if name == "" {
+		name = "collection"
+	}
+	if taskID == "" {
+		return name
+	}
+	return name + "--" + taskID
 }
