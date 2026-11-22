@@ -175,7 +175,7 @@ func serve(parent context.Context, cfg *config.Config, tasks []config.Task, engi
 	// Always enforce login on a running management listener, including when the
 	// password has not been configured. Static assets expose only the login shell.
 	password := os.Getenv("MELOPORT_ADMIN_PASSWORD")
-	if password == "" {
+	if len(password) < 12 || len(password) > 1024 {
 		password = cfg.Server.AdminPassword
 	}
 	options.Auth = newManagementAuth(password)

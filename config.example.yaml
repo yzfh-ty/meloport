@@ -31,7 +31,8 @@ download:
 server:
   listen: "127.0.0.1:8080" # Local Web management and health checks. Set "" to disable.
   # Web login: fixed account admin; set MELOPORT_ADMIN_PASSWORD (12-1024 bytes)
-  # in the process environment before starting; it overrides the YAML password.
+  # in the process environment before starting; a valid value overrides YAML.
+  # Missing or invalid-length environment passwords fall back to admin_password.
   # For local development, set admin_password in your ignored config.yaml instead.
   # admin_password: "YOUR_LOCAL_TEST_PASSWORD"
 

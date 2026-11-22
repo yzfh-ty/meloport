@@ -399,7 +399,8 @@ func TestServeLocalPasswordAndEnvironmentPrecedence(t *testing.T) {
 		{"yaml password", "", "local-password-123", http.StatusOK},
 		{"environment password", "environment-password-456", "environment-password-456", http.StatusOK},
 		{"yaml cannot override environment", "environment-password-456", "local-password-123", http.StatusUnauthorized},
-		{"invalid environment remains locked", "short", "local-password-123", http.StatusServiceUnavailable},
+		{"short environment falls back to yaml", "short", "local-password-123", http.StatusOK},
+		{"long environment falls back to yaml", strings.Repeat("a", 1025), "local-password-123", http.StatusOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("MELOPORT_ADMIN_PASSWORD", tc.environment)
