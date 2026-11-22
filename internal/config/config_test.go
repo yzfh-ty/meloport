@@ -1,12 +1,38 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestLocalAdminPasswordValidationAndJSONRedaction(t *testing.T) {
+	for _, password := range []string{"", "123456789012", "开发测试", strings.Repeat("a", 1024)} {
+		cfg, err := Load(writeConfig(t, "server:\n  admin_password: '"+password+"'\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Server.AdminPassword != password {
+			t.Fatal("configured password was changed")
+		}
+		data, err := json.Marshal(cfg.Server)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(data), "AdminPassword") || password != "" && strings.Contains(string(data), password) {
+			t.Fatal("password exposed in JSON")
+		}
+	}
+	for _, password := range []string{"short-value", strings.Repeat("b", 1025)} {
+		_, err := Load(writeConfig(t, "server:\n  admin_password: '"+password+"'\n"))
+		if err == nil || strings.Contains(err.Error(), password) {
+			t.Fatal("invalid password accepted or echoed in error")
+		}
+	}
+}
 
 func writeConfig(t *testing.T, value string) string {
 	t.Helper()

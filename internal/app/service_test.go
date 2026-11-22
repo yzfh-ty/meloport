@@ -391,6 +391,58 @@ func (w serviceEventWriter) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
+func TestServeLocalPasswordAndEnvironmentPrecedence(t *testing.T) {
+	for _, tc := range []struct {
+		name, environment, login string
+		status                   int
+	}{
+		{"yaml password", "", "local-password-123", http.StatusOK},
+		{"environment password", "environment-password-456", "environment-password-456", http.StatusOK},
+		{"yaml cannot override environment", "environment-password-456", "local-password-123", http.StatusUnauthorized},
+		{"invalid environment remains locked", "short", "local-password-123", http.StatusServiceUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("MELOPORT_ADMIN_PASSWORD", tc.environment)
+			cfg := &config.Config{Timezone: "UTC", Location: time.UTC, Server: config.Server{Listen: "127.0.0.1:0", AdminPassword: "local-password-123"}}
+			events := serviceEventWriter{listening: make(chan string, 1), ready: make(chan struct{}, 1)}
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan error, 1)
+			engine := serviceRunnerFunc(func(context.Context, model.Task) (syncer.Summary, error) {
+				t.Error("login test triggered synchronization")
+				return syncer.Summary{}, nil
+			})
+			go func() {
+				done <- serve(ctx, cfg, nil, engine, servicePingerFunc(func(context.Context) error { return nil }), slog.New(slog.NewJSONHandler(events, nil)))
+			}()
+			t.Cleanup(func() {
+				cancel()
+				if err := waitServiceEvent(t, done); err != nil {
+					t.Errorf("service shutdown: %v", err)
+				}
+			})
+			address := waitServiceEvent(t, events.listening)
+			waitServiceEvent(t, events.ready)
+			body := strings.NewReader(`{"username":"admin","password":"` + tc.login + `"}`)
+			request, err := http.NewRequest("POST", "http://"+address+"/api/session", body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("X-Meloport-Request", "1")
+			client := &http.Client{Timeout: time.Second}
+			defer client.CloseIdleConnections()
+			response, err := client.Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != tc.status {
+				t.Fatalf("login status = %d, want %d", response.StatusCode, tc.status)
+			}
+		})
+	}
+}
+
 func TestServeRunOnStartAndCancellationReleaseListener(t *testing.T) {
 	cfg := &config.Config{
 		Timezone:   "UTC",

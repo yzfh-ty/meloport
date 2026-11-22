@@ -31,7 +31,9 @@ download:
 server:
   listen: "127.0.0.1:8080" # Local Web management and health checks. Set "" to disable.
   # Web login: fixed account admin; set MELOPORT_ADMIN_PASSWORD (12-1024 bytes)
-  # in the process environment before starting. Never put the password here.
+  # in the process environment before starting; it overrides the YAML password.
+  # For local development, set admin_password in your ignored config.yaml instead.
+  # admin_password: "YOUR_LOCAL_TEST_PASSWORD"
 
 # Optional CD2 handoff, 115 verification and playback. Also editable under 115 与 STRM in the Web UI.
 # Restart after changes; Web QR login is held in process memory.

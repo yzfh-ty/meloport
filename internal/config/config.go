@@ -89,7 +89,8 @@ type Download struct {
 }
 
 type Server struct {
-	Listen string `yaml:"listen"`
+	Listen        string `yaml:"listen"`
+	AdminPassword string `yaml:"admin_password,omitempty" json:"-"`
 }
 
 type Task struct {
@@ -214,6 +215,9 @@ func (c *Config) validate(baseDir string) error {
 	c.Storage.Database = resolvePath(baseDir, c.Storage.Database)
 	c.Storage.MusicDirConfigured = c.Storage.MusicDir
 	c.Storage.MusicDir = resolvePath(baseDir, c.Storage.MusicDir)
+	if c.Server.AdminPassword != "" && (len(c.Server.AdminPassword) < 12 || len(c.Server.AdminPassword) > 1024) {
+		return errors.New("server.admin_password must contain 12-1024 UTF-8 bytes")
+	}
 	if c.Server.Listen != "" {
 		host, _, err := net.SplitHostPort(c.Server.Listen)
 		if err != nil {
