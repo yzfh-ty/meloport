@@ -219,7 +219,11 @@
             </button>
             <span id="breadcrumb-current" class="sr-only">任务概览</span>
             </div>
-            <button id="logout-button" class="button sidebar-logout" type="button" aria-label="退出登录" title="退出登录">
+            <button id="theme-toggle" class="button sidebar-action" type="button" aria-label="当前主题：跟随系统；点击切换为浅色" title="当前主题：跟随系统；点击切换为浅色">
+              <svg class="icon" aria-hidden="true"><use id="theme-icon" href="#icon-monitor" /></svg>
+              <span id="theme-label" class="nav-label">主题：跟随系统</span>
+            </button>
+            <button id="logout-button" class="button sidebar-action" type="button" aria-label="退出登录" title="退出登录">
               <svg class="icon" aria-hidden="true"><use href="#icon-logout" /></svg>
               <span class="nav-label">退出登录</span>
             </button>
@@ -1034,23 +1038,6 @@
                     </button>
                   </div>
                 </form>
-              </section>
-              <section class="panel theme-panel" aria-labelledby="appearance-title">
-                <h2 id="appearance-title">界面主题</h2>
-                <fieldset id="theme-options" class="theme-options" aria-labelledby="appearance-title">
-                  <label class="theme-option">
-                    <input class="sr-only" type="radio" name="theme" value="system" checked />
-                    <span><svg class="icon" aria-hidden="true"><use href="#icon-monitor" /></svg>跟随系统</span>
-                  </label>
-                  <label class="theme-option">
-                    <input class="sr-only" type="radio" name="theme" value="light" />
-                    <span><svg class="icon" aria-hidden="true"><use href="#icon-sun" /></svg>浅色</span>
-                  </label>
-                  <label class="theme-option">
-                    <input class="sr-only" type="radio" name="theme" value="dark" />
-                    <span><svg class="icon" aria-hidden="true"><use href="#icon-moon" /></svg>深色</span>
-                  </label>
-                </fieldset>
               </section>
               <section class="panel key-panel" aria-labelledby="key-title">
                 <div class="settings-section-heading">

@@ -3,6 +3,11 @@
 
   const preferenceKey = 'meloport.theme';
   const root = document.documentElement;
+  const themes = {
+    system: { label: '跟随系统', icon: 'monitor', next: 'light' },
+    light: { label: '浅色', icon: 'sun', next: 'dark' },
+    dark: { label: '深色', icon: 'moon', next: 'system' }
+  };
   let theme = 'system';
   try {
     const saved = localStorage.getItem(preferenceKey);
@@ -17,14 +22,25 @@
   // Apply the saved override before the stylesheet renders.
   applyTheme();
   document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('#theme-options input[name="theme"]').forEach((option) => {
-      option.checked = option.value === theme;
-      option.addEventListener('change', () => {
-        if (!option.checked) return;
-        theme = option.value;
-        applyTheme();
-        try { localStorage.setItem(preferenceKey, theme); } catch { /* Keep the preference for this page. */ }
-      });
+    const button = document.getElementById('theme-toggle');
+    const label = document.getElementById('theme-label');
+    const icon = document.getElementById('theme-icon');
+
+    function updateControl() {
+      const current = themes[theme];
+      label.textContent = `主题：${current.label}`;
+      icon.setAttribute('href', `#icon-${current.icon}`);
+      const description = `当前主题：${current.label}；点击切换为${themes[current.next].label}`;
+      button.setAttribute('aria-label', description);
+      button.title = description;
+    }
+
+    updateControl();
+    button.addEventListener('click', () => {
+      theme = themes[theme].next;
+      applyTheme();
+      updateControl();
+      try { localStorage.setItem(preferenceKey, theme); } catch {}
     });
   }, { once: true });
 })();
