@@ -88,9 +88,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline-offs
 .sidebar .brand { gap: 8px; font-size: 1.125rem; }
 .sidebar .brand-mark { width: 30px; height: 30px; }
 .sidebar .drawer-close, .navigation-drawer:not([open]) { display: none; }
-.navigation { display: flex; flex: 1; flex-direction: column; gap: 24px; padding-block: 12px; }
-.navigation-group { display: grid; flex: none; gap: 4px; }
-.navigation-management { margin-top: auto; }
+.navigation { display: flex; flex: 1; flex-direction: column; gap: 4px; padding-block: 12px; }
 .navigation a { position: relative; display: flex; min-height: 44px; align-items: center; gap: 10px; padding: 8px 12px; color: var(--muted); border-radius: var(--radius); font-size: .875rem; font-weight: 600; white-space: nowrap; }
 .navigation a:hover { color: var(--ink); background: var(--hover); }
 .navigation a[aria-current="page"] { color: var(--accent-hover); background: var(--accent-soft); }
