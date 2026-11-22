@@ -214,15 +214,17 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 	}
 	engine := syncer.NewWithSources(metadata, metadata, downloader, store)
 	var cloud *cloudRuntime
-	if cfg.Cloud115.Enabled {
+	if cfg.Cloud115.Enabled || cfg.Cloud115.MediaEnabled {
 		cloud = newCloudRuntime(cfg.Cloud115, drive, store)
-		if cfg.Cloud115.NavidromePlaylistSync {
-			engine.UsePlaylistPublisher(cloud)
-		}
-		if command == "retag" {
-			engine.UseCloudStorage(cloud.sync)
-		} else {
-			engine.UseCloudStorage(cloud)
+		if cfg.Cloud115.Enabled {
+			if cfg.Cloud115.NavidromeEnabled && cfg.Cloud115.NavidromePlaylistSync {
+				engine.UsePlaylistPublisher(cloud)
+			}
+			if command == "retag" {
+				engine.UseCloudStorage(cloud.sync)
+			} else {
+				engine.UseCloudStorage(cloud)
+			}
 		}
 	}
 	if command == "cloud-reconcile" {

@@ -32,15 +32,36 @@ type cloudRuntime struct {
 
 func newCloudRuntime(cfg config.Cloud115, client *cloud115.Client, store *state.Store) *cloudRuntime {
 	drive := &cloudDrive{}
-	if client != nil {
-		drive.environment = client
+	var service *cloudsync.Service
+	var login *cloudLogin
+	var handler http.Handler
+	if cfg.Enabled {
+		if client != nil {
+			drive.environment = client
+		}
+		service = cloudsync.New(store, drive, cloudsync.Options{
+			TargetCID: cfg.TargetCID, StagingDir: cfg.StagingDir, STRMDir: cfg.STRMDir, MediaBaseURL: cfg.MediaBaseURL,
+		})
+		login = &cloudLogin{
+			auth:   cloud115.NewAuthClient(cfg.Timeout.Duration),
+			client: func(token string) (cloudDriveClient, error) { return cloud115.New(token, cfg.Timeout.Duration) },
+		}
 	}
-	service := cloudsync.New(store, drive, cloudsync.Options{
-		TargetCID: cfg.TargetCID, StagingDir: cfg.StagingDir, STRMDir: cfg.STRMDir, MediaBaseURL: cfg.MediaBaseURL,
-	})
+	if cfg.MediaEnabled {
+		var lookup media.Lookup
+		var resolver media.Resolver
+		if cfg.Enabled {
+			lookup, resolver = cloudLookup{store, cfg.TargetCID}, drive
+		}
+		var upstream, mountRoot string
+		if cfg.NavidromeEnabled {
+			upstream, mountRoot = cfg.NavidromeURL, cfg.NavidromeMountRoot
+		}
+		handler = media.New(lookup, resolver, upstream, mountRoot)
+	}
 	var navidromeClient *navidrome.Client
 	var navidromeReady bool
-	if cfg.NavidromePlaylistSync {
+	if cfg.Enabled && cfg.NavidromeEnabled && cfg.NavidromePlaylistSync {
 		if password := optionalEnv(cfg.NavidromePasswordEnv); password != "" {
 			navidromeClient, _ = navidrome.New(navidrome.Options{
 				BaseURL: cfg.NavidromeURL, Username: cfg.NavidromeUsername, Password: password,
@@ -52,16 +73,12 @@ func newCloudRuntime(cfg config.Cloud115, client *cloud115.Client, store *state.
 	return &cloudRuntime{
 		sync: service, drive: drive,
 		navidrome: navidromeClient, navidromeConfig: cfg, navidromeReady: navidromeReady,
-		handler: media.New(cloudLookup{store, cfg.TargetCID}, drive, cfg.NavidromeURL, cfg.NavidromeMountRoot),
-		login: &cloudLogin{
-			auth:   cloud115.NewAuthClient(cfg.Timeout.Duration),
-			client: func(token string) (cloudDriveClient, error) { return cloud115.New(token, cfg.Timeout.Duration) },
-		},
+		handler: handler, login: login,
 	}
 }
 
 func (c *cloudRuntime) PublishPlaylist(ctx context.Context, task model.Task, playlist model.Playlist, downloads []state.Download) error {
-	if !c.navidromeConfig.NavidromePlaylistSync || task.SourceType != "ranking" {
+	if !c.navidromeConfig.Enabled || !c.navidromeConfig.NavidromeEnabled || !c.navidromeConfig.NavidromePlaylistSync || task.SourceType != "ranking" {
 		return nil
 	}
 	if c.navidrome == nil {

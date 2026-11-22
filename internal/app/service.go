@@ -221,7 +221,7 @@ func serve(parent context.Context, cfg *config.Config, tasks []config.Task, engi
 			return err
 		}
 	}
-	if options.Cloud != nil {
+	if options.Cloud != nil && cfg.Cloud115.MediaEnabled && options.Cloud.handler != nil {
 		// The Subsonic fallback can stream entire audio files through this listener.
 		if err := bind("115 media playback", "115 media server listening", cfg.Cloud115.MediaListen, options.Cloud.handler, 0); err != nil {
 			return err
@@ -245,7 +245,7 @@ func serve(parent context.Context, cfg *config.Config, tasks []config.Task, engi
 	cloudDone := make(chan struct{})
 	go func() {
 		defer close(cloudDone)
-		if options.Cloud != nil {
+		if options.Cloud != nil && cfg.Cloud115.Enabled && options.Cloud.sync != nil {
 			options.Cloud.poll(ctx, cfg.Cloud115.PollInterval.Duration, logger)
 		}
 	}()

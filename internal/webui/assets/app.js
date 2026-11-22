@@ -1357,7 +1357,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('cloud-auth-status').className = `status-badge status-${connection[1]}`;
     text('cloud-auth-note', data.account?.name ? `账号：${data.account.name}` : active
       ? connected ? '可检查账号和目标目录是否可访问。' : '打开手机端 115 App，扫码授权此服务。'
-      : '保存设置并重启服务后，即可扫码登录。');
+      : '115 交接已关闭，订阅歌曲下载到本地。需要网盘交接时再开启并重启。');
     show('cloud-login', active);
     show('cloud-setup-link', !active && !data.restart_required);
     show('cloud-logout', data.session_authenticated);
@@ -1370,11 +1370,31 @@ document.addEventListener('DOMContentLoaded', () => {
     $('cloud-reconcile').disabled = !controlsReady || (!connected && !(data.stats?.confirmed > 0));
     $('cloud-fields').disabled = operation === 'save';
     $('cloud-save').disabled = Boolean(operation) || !dirty;
-    $('cloud-target-cid').required = $('cloud-enabled').checked;
+    renderCloudOptions();
     text('cloud-settings-note', dirty ? '有未保存的更改。' : '设置保存后，在下次启动时生效。');
-    text('cloud-navidrome-status', data.settings.navidrome_playlist_sync ? '歌单同步已启用' : data.settings.navidrome_url ? '已配置' : '可选');
     for (const key of ['pending', 'confirmed', 'exported']) text(`cloud-${key}`, number(data.stats?.[key]));
     renderCloudFiles();
+  }
+
+  function renderCloudOptions() {
+    const cloudEnabled = $('cloud-enabled').checked;
+    const mediaEnabled = $('cloud-media-enabled').checked;
+    const navidromeEnabled = $('cloud-navidrome-enabled').checked;
+    $('cloud-storage-fields').disabled = !cloudEnabled;
+    $('cloud-advanced-fields').disabled = !cloudEnabled;
+    $('cloud-media-fields').disabled = !mediaEnabled && !cloudEnabled;
+    $('cloud-media-listen').disabled = !mediaEnabled;
+    $('cloud-navidrome-fields').disabled = !navidromeEnabled;
+    $('cloud-navidrome-credentials').disabled = !$('cloud-navidrome-playlist-sync').checked;
+    $('cloud-target-cid').required = cloudEnabled;
+    $('cloud-media-listen').required = mediaEnabled;
+    $('cloud-navidrome-url').required = navidromeEnabled;
+    $('cloud-navidrome-mount-root').required = navidromeEnabled;
+    const data = state.cloud.data;
+    text('cloud-navidrome-status', navidromeEnabled ? data?.navidrome_runtime_enabled ? '已启用' : '重启后启用' : '未启用');
+    text('cloud-media-runtime', data?.media_runtime_enabled
+      ? '媒体端口已启动。更改开关、端口或 Navidrome 接入后，需重启服务。'
+      : '媒体端口未启动。仅下载本地歌曲时无需开启；生成的 STRM 需开启媒体端口后才能播放。');
   }
 
   function renderCloudFiles() {
@@ -1405,7 +1425,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ? connected ? '运行订阅任务，待 CD2 完成上传后即可生成。'
         : data.stats?.confirmed > 0 ? '已有确认的音频，可先修复 STRM；核对新的 CD2 上传需先登录。'
           : '先扫码登录，再核对 CD2 已上传的音频。'
-      : '保存设置并重启服务后，可在这里查看导出进度。');
+      : '当前仅下载到本地。需要 CD2 上传和 STRM 时再开启 115 交接。');
     $('cloud-empty').classList.toggle('cloud-empty-setup', !data.runtime_enabled);
     show('cloud-pagination', lastPage > 0 || Boolean(data.files_truncated));
     text('cloud-file-count', `${start + 1}–${start + rows.length} / ${files.length} 条记录${data.files_truncated ? '（仅显示前 100 条）' : ''}`);
@@ -1463,25 +1483,46 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function readCloudSettings(form) {
+    return Object.fromEntries(Array.from(form.querySelectorAll('input[name]'), (input) => [
+      input.name, input.type === 'checkbox' ? input.checked : input.value.trim()
+    ]));
+  }
+
   function saveCloudSettings(event) {
     event.preventDefault();
     const form = event.currentTarget;
-    const settings = Object.fromEntries(Array.from(new FormData(form), ([key, value]) => [key, value.trim()]));
-    settings.enabled = $('cloud-enabled').checked;
-    settings.navidrome_playlist_sync = $('cloud-navidrome-playlist-sync').checked;
+    const settings = readCloudSettings(form);
     if (settings.enabled && !/^[1-9][0-9]{0,19}$/.test(settings.target_cid)) {
       cloudFeedback('cloud-settings-error', '启用 115 时，请填写非根目录的数字 CID。');
       $('cloud-target-cid').focus();
       return;
     }
-    if (Boolean(settings.navidrome_url) !== Boolean(settings.navidrome_mount_root)) {
+    if (settings.media_enabled && !settings.media_listen) {
+      $('cloud-media-listen').closest('details').open = true;
+      cloudFeedback('cloud-settings-error', '开启媒体端口时，请填写监听地址和端口。');
+      $('cloud-media-listen').focus();
+      return;
+    }
+    if (settings.navidrome_enabled && !settings.media_enabled) {
+      $('cloud-media-enabled').closest('details').open = true;
+      cloudFeedback('cloud-settings-error', '接入 Navidrome 时，请同时开启独立媒体端口。');
+      $('cloud-media-enabled').focus();
+      return;
+    }
+    if (settings.navidrome_enabled && (!settings.navidrome_url || !settings.navidrome_mount_root)) {
       const missing = $(settings.navidrome_url ? 'cloud-navidrome-mount-root' : 'cloud-navidrome-url');
       missing.closest('details').open = true;
       cloudFeedback('cloud-settings-error', '请同时填写 Navidrome 服务地址与挂载路径。');
       missing.focus();
       return;
     }
-    if (settings.navidrome_playlist_sync && (!settings.navidrome_url || !settings.navidrome_mount_root || !settings.navidrome_username || !settings.navidrome_password_env)) {
+    if (settings.navidrome_enabled && settings.navidrome_playlist_sync && !settings.enabled) {
+      cloudFeedback('cloud-settings-error', '同步创建 Navidrome 榜单歌单时，请先开启 115 交接。');
+      $('cloud-enabled').focus();
+      return;
+    }
+    if (settings.navidrome_enabled && settings.navidrome_playlist_sync && (!settings.navidrome_username || !settings.navidrome_password_env)) {
       $('cloud-navidrome-url').closest('details').open = true;
       cloudFeedback('cloud-settings-error', '启用歌单同步时，请填写 Navidrome 地址、挂载路径、用户名和密码环境变量名。');
       $('cloud-navidrome-username').focus();
@@ -1491,7 +1532,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const result = await request(`${cloudPath}/settings`, { method: 'PUT', body: settings });
       state.cloud.dirty = false;
       await loadCloud();
-      toast(result.restart_required ? '设置已保存，重启服务后生效' : '115 设置已保存');
+      toast(result.restart_required ? '设置已保存，重启服务后生效' : '接入设置已保存');
     }, 'cloud-settings-error');
   }
 

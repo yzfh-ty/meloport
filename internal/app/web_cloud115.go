@@ -34,15 +34,17 @@ type cloudFileView struct {
 }
 
 type cloudOverviewView struct {
-	Settings             config.Cloud115Settings `json:"settings"`
-	RuntimeEnabled       bool                    `json:"runtime_enabled"`
-	RestartRequired      bool                    `json:"restart_required"`
-	TokenConfigured      bool                    `json:"token_configured"`
-	SessionAuthenticated bool                    `json:"session_authenticated"`
-	Account              *cloudAccountView       `json:"account,omitempty"`
-	Stats                cloudStats              `json:"stats"`
-	Files                []cloudFileView         `json:"files"`
-	FilesTruncated       bool                    `json:"files_truncated"`
+	Settings                config.Cloud115Settings `json:"settings"`
+	RuntimeEnabled          bool                    `json:"runtime_enabled"`
+	MediaRuntimeEnabled     bool                    `json:"media_runtime_enabled"`
+	NavidromeRuntimeEnabled bool                    `json:"navidrome_runtime_enabled"`
+	RestartRequired         bool                    `json:"restart_required"`
+	TokenConfigured         bool                    `json:"token_configured"`
+	SessionAuthenticated    bool                    `json:"session_authenticated"`
+	Account                 *cloudAccountView       `json:"account,omitempty"`
+	Stats                   cloudStats              `json:"stats"`
+	Files                   []cloudFileView         `json:"files"`
+	FilesTruncated          bool                    `json:"files_truncated"`
 }
 
 func (c *webController) cloudOverview(w http.ResponseWriter, r *http.Request) {
@@ -50,10 +52,12 @@ func (c *webController) cloudOverview(w http.ResponseWriter, r *http.Request) {
 	saved := c.cfg.Cloud115
 	c.mu.RUnlock()
 	view := cloudOverviewView{
-		Settings: saved.Settings(), RuntimeEnabled: c.cloud != nil,
-		RestartRequired: !c.cloudBoot.SameRuntime(saved), Files: []cloudFileView{},
+		Settings: saved.Settings(), RuntimeEnabled: c.cloud != nil && c.cloud.sync != nil,
+		MediaRuntimeEnabled:     c.cloud != nil && c.cloud.handler != nil,
+		NavidromeRuntimeEnabled: c.cloud != nil && c.cloud.handler != nil && c.cloudBoot.NavidromeEnabled,
+		RestartRequired:         !c.cloudBoot.SameRuntime(saved), Files: []cloudFileView{},
 	}
-	if c.cloud != nil && c.cloud.drive != nil {
+	if view.RuntimeEnabled && c.cloud.drive != nil {
 		view.TokenConfigured = c.cloud.drive.environment != nil
 		_, view.SessionAuthenticated, view.Account = c.cloud.drive.current()
 		var err error
@@ -156,7 +160,7 @@ func (c *webController) cloudSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *webController) cloudReady(w http.ResponseWriter) bool {
-	if c.cloud == nil || c.cloud.drive == nil || c.cloud.login == nil {
+	if c.cloud == nil || c.cloud.sync == nil || c.cloud.drive == nil || c.cloud.login == nil {
 		webError(w, http.StatusConflict, "enable 115 in settings and restart Meloport first")
 		return false
 	}

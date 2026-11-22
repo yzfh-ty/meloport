@@ -15,8 +15,10 @@ type Cloud115Settings struct {
 	TargetCID             string `json:"target_cid"`
 	StagingDir            string `json:"staging_dir"`
 	STRMDir               string `json:"strm_dir"`
+	MediaEnabled          bool   `json:"media_enabled"`
 	MediaListen           string `json:"media_listen"`
 	MediaBaseURL          string `json:"media_base_url"`
+	NavidromeEnabled      bool   `json:"navidrome_enabled"`
 	NavidromeURL          string `json:"navidrome_url"`
 	NavidromeMountRoot    string `json:"navidrome_mount_root"`
 	NavidromeUsername     string `json:"navidrome_username"`
@@ -36,8 +38,8 @@ func (c Cloud115) Settings() Cloud115Settings {
 	}
 	return Cloud115Settings{
 		Enabled: c.Enabled, AccessTokenEnv: c.AccessTokenEnv, ClientID: c.ClientID, TargetCID: c.TargetCID,
-		StagingDir: stagingDir, STRMDir: strmDir, MediaListen: c.MediaListen, MediaBaseURL: c.MediaBaseURL,
-		NavidromeURL: c.NavidromeURL, NavidromeMountRoot: c.NavidromeMountRoot,
+		StagingDir: stagingDir, STRMDir: strmDir, MediaEnabled: c.MediaEnabled, MediaListen: c.MediaListen, MediaBaseURL: c.MediaBaseURL,
+		NavidromeEnabled: c.NavidromeEnabled, NavidromeURL: c.NavidromeURL, NavidromeMountRoot: c.NavidromeMountRoot,
 		NavidromeUsername: c.NavidromeUsername, NavidromePasswordEnv: c.NavidromePasswordEnv, NavidromePlaylistSync: c.NavidromePlaylistSync,
 		PollInterval: c.PollInterval.String(), Timeout: c.Timeout.String(),
 	}
@@ -46,12 +48,26 @@ func (c Cloud115) Settings() Cloud115Settings {
 // SameRuntime compares the effective values, ignoring equivalent path spellings
 // and edits to a disabled integration.
 func (c Cloud115) SameRuntime(other Cloud115) bool {
-	if !c.Enabled && !other.Enabled {
-		return true
+	if c.Enabled != other.Enabled || c.MediaEnabled != other.MediaEnabled || c.NavidromeEnabled != other.NavidromeEnabled {
+		return false
 	}
-	c.stagingDirInput, c.strmDirInput = "", ""
-	other.stagingDirInput, other.strmDirInput = "", ""
-	return c == other
+	if c.Enabled && (c.AccessTokenEnv != other.AccessTokenEnv || c.ClientID != other.ClientID || c.TargetCID != other.TargetCID ||
+		c.StagingDir != other.StagingDir || c.STRMDir != other.STRMDir || c.MediaBaseURL != other.MediaBaseURL ||
+		c.PollInterval != other.PollInterval || c.Timeout != other.Timeout) {
+		return false
+	}
+	if c.MediaEnabled && c.MediaListen != other.MediaListen {
+		return false
+	}
+	if c.NavidromeEnabled {
+		if c.NavidromeURL != other.NavidromeURL || c.NavidromeMountRoot != other.NavidromeMountRoot || c.NavidromePlaylistSync != other.NavidromePlaylistSync {
+			return false
+		}
+		if c.NavidromePlaylistSync && (c.NavidromeUsername != other.NavidromeUsername || c.NavidromePasswordEnv != other.NavidromePasswordEnv) {
+			return false
+		}
+	}
+	return true
 }
 
 // ProtectActiveCloud keeps storage and task edits valid for the active settings
@@ -73,6 +89,8 @@ func (e *Editor) Cloud115(input Cloud115Settings) (*Config, error) {
 			setNode(root, "cloud115", cloud)
 		}
 		setScalar(cloud, "enabled", boolText(input.Enabled), "!!bool")
+		setScalar(cloud, "media_enabled", boolText(input.MediaEnabled), "!!bool")
+		setScalar(cloud, "navidrome_enabled", boolText(input.NavidromeEnabled), "!!bool")
 		for _, entry := range []struct{ key, value string }{
 			{"access_token_env", input.AccessTokenEnv}, {"client_id", input.ClientID}, {"target_cid", input.TargetCID},
 			{"staging_dir", input.StagingDir}, {"strm_dir", input.STRMDir}, {"media_listen", input.MediaListen},

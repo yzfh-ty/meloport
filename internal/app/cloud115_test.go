@@ -7,9 +7,11 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -72,7 +74,7 @@ func cloudServiceFixture(t *testing.T) (*config.Config, *state.Store, runner, se
 		Timezone: "UTC",
 		Location: time.UTC,
 		Server:   config.Server{Listen: "127.0.0.1:0"},
-		Cloud115: config.Cloud115{Enabled: true, MediaListen: "127.0.0.1:0", PollInterval: config.Duration{Duration: time.Minute}},
+		Cloud115: config.Cloud115{Enabled: true, MediaEnabled: true, MediaListen: "127.0.0.1:0", PollInterval: config.Duration{Duration: time.Minute}},
 	}
 	service := cloudsync.New(store, emptyCloudDirectory{t}, cloudsync.Options{TargetCID: "12345"})
 	mux := http.NewServeMux()
@@ -158,6 +160,103 @@ func TestServeMediaBindFailureClosesManagementListener(t *testing.T) {
 		t.Fatalf("expected the media bind failure, got %v", err)
 	}
 	assertCloudAddressReleased(t, waitServiceEvent(t, events.listening))
+}
+
+func TestServeCloudDoesNotBindDisabledMediaPort(t *testing.T) {
+	cfg, store, engine, options := cloudServiceFixture(t)
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer occupied.Close()
+	cfg.Cloud115.MediaEnabled = false
+	cfg.Cloud115.MediaListen = occupied.Addr().String()
+	logger, events := cloudServiceLogger()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	var serveErr error
+	go func() {
+		defer close(done)
+		serveErr = serve(ctx, cfg, nil, engine, store, logger, options)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		waitServiceEvent(t, done)
+	})
+	managementAddr := waitServiceEvent(t, events.listening)
+	waitServiceEvent(t, events.ready)
+	select {
+	case address := <-events.mediaListening:
+		t.Fatalf("disabled media listener started on %s", address)
+	default:
+	}
+	cancel()
+	waitServiceEvent(t, done)
+	if serveErr != nil {
+		t.Fatal(serveErr)
+	}
+	assertCloudAddressReleased(t, managementAddr)
+}
+
+func TestCloudRuntimeOnlyActivatesExplicitNavidromeProxy(t *testing.T) {
+	var requests atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		_, _ = io.WriteString(w, "Navidrome fixture")
+	}))
+	t.Cleanup(upstream.Close)
+	cfg := config.Cloud115{NavidromeURL: upstream.URL, NavidromeMountRoot: "/music"}
+	runtime := newCloudRuntime(cfg, nil, nil)
+	if runtime.handler != nil || runtime.sync != nil || runtime.login != nil || runtime.navidrome != nil {
+		t.Fatal("saved endpoints must not activate disabled integrations")
+	}
+	cfg.MediaEnabled = true
+	runtime = newCloudRuntime(cfg, nil, nil)
+	response := httptest.NewRecorder()
+	runtime.handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/rest/ping", nil))
+	if response.Code != http.StatusNotFound || requests.Load() != 0 {
+		t.Fatal("an inactive Navidrome must not receive media requests")
+	}
+	cfg.NavidromeEnabled = true
+	runtime = newCloudRuntime(cfg, nil, nil)
+	response = httptest.NewRecorder()
+	runtime.handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/rest/stream?id=fixture", nil))
+	if response.Code != http.StatusOK || response.Body.String() != "Navidrome fixture" || requests.Load() != 1 {
+		t.Fatal("an explicitly enabled Navidrome should work without 115")
+	}
+	if runtime.sync != nil || runtime.login != nil || runtime.navidrome != nil {
+		t.Fatal("a standalone Navidrome proxy must not activate cloud handoff or playlist publication")
+	}
+}
+
+func TestCLIDefaultLocalModeIgnoresSavedMediaEndpoints(t *testing.T) {
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer occupied.Close()
+	var requests atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(upstream.Close)
+	t.Setenv("MELOPORT_115_ACCESS_TOKEN", "invalid-fixture-token")
+	path := cliConfig(t, "cloud115:\n  media_listen: '"+occupied.Addr().String()+"'\n  navidrome_url: "+upstream.URL+"\n  navidrome_mount_root: /music\n")
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	var diagnostic strings.Builder
+	if err := Run(ctx, []string{"serve", "-config", path}, io.Discard, &diagnostic, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(diagnostic.String(), "115 media server listening") || requests.Load() != 0 {
+		t.Fatal("local download mode activated an optional listener or upstream")
+	}
+	for _, name := range []string{"115-staging", "strm"} {
+		if _, err := os.Stat(filepath.Join(filepath.Dir(path), "data", name)); !os.IsNotExist(err) {
+			t.Fatalf("local mode created the optional %s directory: %v", name, err)
+		}
+	}
 }
 
 func assertCloudAddressReleased(t *testing.T, address string) {

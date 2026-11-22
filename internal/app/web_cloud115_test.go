@@ -72,6 +72,53 @@ func startCloudWebFixture(t *testing.T, f *webFixture) {
 	f.control.editor.ProtectActiveCloud(cfg.Cloud115)
 }
 
+func TestCloudWebMediaSwitchesPreserveLocalDownloadsAndRequireRestart(t *testing.T) {
+	f := newWebFixture(t)
+	readOverview := func() cloudOverviewView {
+		t.Helper()
+		response := webRequest(t, f, http.MethodGet, "/api/cloud115", nil)
+		webStatus(t, response, http.StatusOK)
+		var view cloudOverviewView
+		if err := json.Unmarshal(response.Body.Bytes(), &view); err != nil {
+			t.Fatal(err)
+		}
+		return view
+	}
+	initial := readOverview()
+	if initial.Settings.Enabled || initial.Settings.MediaEnabled || initial.Settings.NavidromeEnabled || initial.Settings.NavidromePlaylistSync ||
+		initial.RuntimeEnabled || initial.MediaRuntimeEnabled || initial.NavidromeRuntimeEnabled {
+		t.Fatal("all optional integrations must start disabled")
+	}
+	settings := initial.Settings
+	settings.MediaEnabled, settings.NavidromeEnabled = true, true
+	settings.MediaListen, settings.MediaBaseURL = "127.0.0.1:18081", "http://127.0.0.1:18081"
+	settings.NavidromeURL, settings.NavidromeMountRoot = "http://127.0.0.1:4533", "/music"
+	putFixtureCloudSettings(t, f, settings)
+	saved := readOverview()
+	if saved.RuntimeEnabled || saved.MediaRuntimeEnabled || saved.NavidromeRuntimeEnabled || !saved.RestartRequired || saved.Settings.MediaListen != settings.MediaListen {
+		t.Fatal("saving a media address must not start its listener before restart")
+	}
+	startCloudWebFixture(t, f)
+	started := readOverview()
+	if started.RuntimeEnabled || !started.MediaRuntimeEnabled || !started.NavidromeRuntimeEnabled || started.RestartRequired {
+		t.Fatal("standalone Navidrome runtime incorrectly enables 115 handoff")
+	}
+	webStatus(t, webRequest(t, f, http.MethodPost, "/api/cloud115/login", nil), http.StatusConflict)
+	settings.MediaListen = "127.0.0.1:18082"
+	putFixtureCloudSettings(t, f, settings)
+	settings.MediaEnabled, settings.NavidromeEnabled = false, false
+	putFixtureCloudSettings(t, f, settings)
+	startCloudWebFixture(t, f)
+	disabled := readOverview()
+	if disabled.RuntimeEnabled || disabled.MediaRuntimeEnabled || disabled.NavidromeRuntimeEnabled || disabled.RestartRequired {
+		t.Fatal("disabled integration still appears active after restart")
+	}
+	cfg, err := config.Load(f.path)
+	if err != nil || cfg.Storage.MusicDir != f.cfg.Storage.MusicDir || cfg.Cloud115.NavidromeURL != settings.NavidromeURL {
+		t.Fatalf("integration settings changed local downloads or lost saved endpoints: %v", err)
+	}
+}
+
 type webCloudQRFixture struct {
 	status int
 }

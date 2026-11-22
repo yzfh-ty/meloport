@@ -5,6 +5,30 @@ const test = require('node:test');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, 'assets/app.js'), 'utf8');
 
+test('disabled integrations preserve their addresses while saving explicit off switches', () => {
+  const inputs = [
+    { name: 'enabled', type: 'checkbox', checked: false },
+    { name: 'media_enabled', type: 'checkbox', checked: false },
+    { name: 'navidrome_enabled', type: 'checkbox', checked: false },
+    { name: 'navidrome_playlist_sync', type: 'checkbox', checked: false },
+    { name: 'media_listen', type: 'text', value: ' 127.0.0.1:18081 ', disabled: true },
+    { name: 'navidrome_url', type: 'url', value: ' http://127.0.0.1:4533 ', disabled: true },
+    { name: 'navidrome_mount_root', type: 'text', value: '/music', disabled: true },
+  ];
+  const form = { querySelectorAll: () => inputs };
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(source.slice(source.indexOf('  function readCloudSettings('), source.indexOf('  function saveCloudSettings(')) + '\nthis.read = readCloudSettings;', context);
+  const settings = context.read(form);
+  assert.equal(settings.enabled, false);
+  assert.equal(settings.media_enabled, false);
+  assert.equal(settings.navidrome_enabled, false);
+  assert.equal(settings.navidrome_playlist_sync, false);
+  assert.equal(settings.media_listen, '127.0.0.1:18081');
+  assert.equal(settings.navidrome_url, 'http://127.0.0.1:4533');
+  assert.equal(settings.navidrome_mount_root, '/music');
+});
+
 test('search loading, failure and cancellation describe the current request', async () => {
   for (const name of ['Error', 'AbortError']) {
     const nodes = new Map();

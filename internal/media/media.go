@@ -88,6 +88,10 @@ func (h *handler) serveMedia(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if h.lookup == nil || h.resolver == nil {
+		http.NotFound(w, r)
+		return
+	}
 	pickCode, found, err := h.lookup.ByID(r.Context(), id)
 	if err != nil {
 		http.Error(w, "media mapping unavailable", http.StatusServiceUnavailable)

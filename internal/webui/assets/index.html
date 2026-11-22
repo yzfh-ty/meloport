@@ -833,55 +833,82 @@
             </section>
 
             <section class="panel" aria-labelledby="cloud-settings-title">
-              <div class="panel-heading"><div><h2 id="cloud-settings-title" tabindex="-1">网盘与导出设置</h2><p>CD2 负责上传。Meloport 核对 115 上的音频后写入独立的 STRM 目录。</p></div></div>
+              <div class="panel-heading"><div><h2 id="cloud-settings-title" tabindex="-1">可选接入设置</h2><p>默认只下载订阅歌曲到本地。115 交接与 Navidrome 接入均需手动开启。</p></div></div>
               <form id="cloud-settings" class="padded-form cloud-form" novalidate>
                 <fieldset id="cloud-fields" disabled>
                   <label class="checkbox-field cloud-enable" for="cloud-enabled">
                     <input type="checkbox" id="cloud-enabled" name="enabled" />
-                    <span><strong>启用 115 网盘交接与 STRM</strong><small>适用于此实例的所有订阅任务。</small></span>
+                    <span><strong>启用 115 网盘交接与 STRM</strong><small>默认关闭。开启后，完整音频会移入 CD2 暂存目录，适用于所有订阅任务。</small></span>
                   </label>
-                  <div class="field">
-                    <label for="cloud-target-cid">115 目标目录 ID</label>
-                    <input id="cloud-target-cid" name="target_cid" type="text" inputmode="numeric" maxlength="20" pattern="[1-9][0-9]{0,19}" placeholder="例如 123456789" aria-describedby="cloud-target-hint" />
-                    <p id="cloud-target-hint" class="field-hint">在 115 中打开专用目录，填写地址中的 CID。CD2 应上传到同一目录并保留任务子目录。</p>
-                  </div>
-                  <div class="form-grid">
+                  <fieldset id="cloud-storage-fields" disabled>
                     <div class="field">
-                      <label for="cloud-staging-dir">CD2 暂存目录</label>
-                      <input id="cloud-staging-dir" name="staging_dir" type="text" maxlength="4096" placeholder="data/115-staging" />
-                      <p class="field-hint">设为 CD2 的上传监控目录，与本地音乐目录使用同一文件系统。</p>
+                      <label for="cloud-target-cid">115 目标目录 ID</label>
+                      <input id="cloud-target-cid" name="target_cid" type="text" inputmode="numeric" maxlength="20" pattern="[1-9][0-9]{0,19}" placeholder="例如 123456789" aria-describedby="cloud-target-hint" />
+                      <p id="cloud-target-hint" class="field-hint">在 115 中打开专用目录，填写地址中的 CID。CD2 应上传到同一目录并保留任务子目录。</p>
                     </div>
-                    <div class="field">
-                      <label for="cloud-strm-dir">STRM 导出目录</label>
-                      <input id="cloud-strm-dir" name="strm_dir" type="text" maxlength="4096" placeholder="data/strm" />
-                      <p class="field-hint">使用独立目录。相对路径以配置文件所在目录为准。</p>
-                    </div>
-                  </div>
-                  <div class="field">
-                    <label for="cloud-media-base-url">播放器访问地址</label>
-                    <input id="cloud-media-base-url" name="media_base_url" type="url" maxlength="2048" placeholder="http://127.0.0.1:8081" aria-describedby="cloud-media-hint" />
-                    <p id="cloud-media-hint" class="field-hint">STRM 会写入此地址。跨设备播放请填写播放器能访问的 HTTPS 地址。</p>
-                  </div>
-                  <details class="advanced-fields cloud-advanced">
-                    <summary>Navidrome 接入 <span id="cloud-navidrome-status">可选</span></summary>
-                    <p class="field-hint">让 Navidrome 扫描 CD2 挂载的真实音频。使用 Meloport 直连播放时，在对应播放器启用 Report Real Path，并关闭服务端转码和限码率。</p>
                     <div class="form-grid">
-                      <div class="field"><label for="cloud-navidrome-url">Navidrome 服务地址</label><input id="cloud-navidrome-url" name="navidrome_url" type="url" maxlength="2048" placeholder="http://127.0.0.1:4533" /></div>
-                      <div class="field"><label for="cloud-navidrome-mount-root">Navidrome 中的挂载路径</label><input id="cloud-navidrome-mount-root" name="navidrome_mount_root" type="text" maxlength="4096" placeholder="/music/115" /></div>
-                      <div class="field"><label for="cloud-navidrome-username">Navidrome 用户名</label><input id="cloud-navidrome-username" name="navidrome_username" type="text" maxlength="255" autocomplete="username" /></div>
-                      <div class="field"><label for="cloud-navidrome-password-env">密码环境变量名</label><input id="cloud-navidrome-password-env" name="navidrome_password_env" type="text" maxlength="128" placeholder="MELOPORT_NAVIDROME_PASSWORD" autocomplete="off" /></div>
-                      <label class="checkbox-field" for="cloud-navidrome-playlist-sync"><input id="cloud-navidrome-playlist-sync" name="navidrome_playlist_sync" type="checkbox" /><span><strong>同步创建 Navidrome 歌单</strong><small>按平台和榜单分类；Navidrome 扫描完成后再创建或更新歌单。远程服务需使用 HTTPS。</small></span></label>
+                      <div class="field">
+                        <label for="cloud-staging-dir">CD2 暂存目录</label>
+                        <input id="cloud-staging-dir" name="staging_dir" type="text" maxlength="4096" placeholder="data/115-staging" />
+                        <p class="field-hint">设为 CD2 的上传监控目录，与本地音乐目录使用同一文件系统。</p>
+                      </div>
+                      <div class="field">
+                        <label for="cloud-strm-dir">STRM 导出目录</label>
+                        <input id="cloud-strm-dir" name="strm_dir" type="text" maxlength="4096" placeholder="data/strm" />
+                        <p class="field-hint">使用独立目录。相对路径以配置文件所在目录为准。</p>
+                      </div>
                     </div>
+                  </fieldset>
+                  <details class="advanced-fields cloud-advanced">
+                    <summary>Navidrome 接入与媒体端口 <span id="cloud-navidrome-status">未启用</span></summary>
+                    <label class="checkbox-field" for="cloud-media-enabled">
+                      <input id="cloud-media-enabled" name="media_enabled" type="checkbox" />
+                      <span><strong>启用独立媒体端口</strong><small>默认关闭。开启后提供 STRM 播放地址，也可用作 Navidrome 的反代入口。</small></span>
+                    </label>
+                    <fieldset id="cloud-media-fields" disabled>
+                      <div class="form-grid">
+                        <div class="field">
+                          <label for="cloud-media-listen">媒体反代监听地址</label>
+                          <input id="cloud-media-listen" name="media_listen" type="text" maxlength="255" placeholder="127.0.0.1:8081" aria-describedby="cloud-media-listen-hint" />
+                          <p id="cloud-media-listen-hint" class="field-hint">端口可修改，需与管理端口不同。开启并重启后才会监听。</p>
+                        </div>
+                        <div class="field">
+                          <label for="cloud-media-base-url">播放器访问地址</label>
+                          <input id="cloud-media-base-url" name="media_base_url" type="url" maxlength="2048" placeholder="http://127.0.0.1:8081" aria-describedby="cloud-media-hint" />
+                          <p id="cloud-media-hint" class="field-hint">STRM 会写入此地址。修改监听端口时同步调整；跨设备请填写播放器能访问的 HTTPS 反代地址。</p>
+                        </div>
+                      </div>
+                    </fieldset>
+                    <p id="cloud-media-runtime" class="field-hint" role="status">媒体端口未启动。</p>
+                    <label class="checkbox-field" for="cloud-navidrome-enabled">
+                      <input id="cloud-navidrome-enabled" name="navidrome_enabled" type="checkbox" />
+                      <span><strong>启用 Navidrome 接入</strong><small>默认关闭。需同时开启独立媒体端口；可单独使用，本地下载无需启用 115。</small></span>
+                    </label>
+                    <fieldset id="cloud-navidrome-fields" disabled>
+                      <div class="form-grid">
+                        <div class="field"><label for="cloud-navidrome-url">Navidrome 服务地址</label><input id="cloud-navidrome-url" name="navidrome_url" type="url" maxlength="2048" placeholder="http://127.0.0.1:4533" /></div>
+                        <div class="field"><label for="cloud-navidrome-mount-root">Navidrome 中的音乐目录</label><input id="cloud-navidrome-mount-root" name="navidrome_mount_root" type="text" maxlength="4096" placeholder="/music" /></div>
+                      </div>
+                      <p class="field-hint">让 Navidrome 扫描本地音频；使用 115 时扫描 CD2 挂载的真实音频。302 直链播放需启用 Report Real Path，并关闭服务端转码和限码率。</p>
+                      <label class="checkbox-field" for="cloud-navidrome-playlist-sync"><input id="cloud-navidrome-playlist-sync" name="navidrome_playlist_sync" type="checkbox" /><span><strong>同步创建 Navidrome 榜单歌单</strong><small>默认关闭，需开启 115 交接。Navidrome 扫描完成后，再创建或更新榜单歌单。</small></span></label>
+                      <fieldset id="cloud-navidrome-credentials" disabled>
+                        <div class="form-grid">
+                          <div class="field"><label for="cloud-navidrome-username">Navidrome 用户名</label><input id="cloud-navidrome-username" name="navidrome_username" type="text" maxlength="255" autocomplete="username" /></div>
+                          <div class="field"><label for="cloud-navidrome-password-env">密码环境变量名</label><input id="cloud-navidrome-password-env" name="navidrome_password_env" type="text" maxlength="128" placeholder="MELOPORT_NAVIDROME_PASSWORD" autocomplete="off" /></div>
+                        </div>
+                      </fieldset>
+                    </fieldset>
                   </details>
                   <details class="advanced-fields cloud-advanced">
-                    <summary>高级设置 <span>授权与监听</span></summary>
-                    <div class="form-grid">
-                      <div class="field"><label for="cloud-client-id">115 应用 ID</label><input id="cloud-client-id" name="client_id" type="text" inputmode="numeric" maxlength="20" pattern="[0-9]{1,20}" placeholder="100197303" /></div>
-                      <div class="field"><label for="cloud-access-token-env">令牌环境变量名</label><input id="cloud-access-token-env" name="access_token_env" type="text" maxlength="128" placeholder="MELOPORT_115_ACCESS_TOKEN" /></div>
-                      <div class="field"><label for="cloud-media-listen">媒体监听地址</label><input id="cloud-media-listen" name="media_listen" type="text" maxlength="255" placeholder="127.0.0.1:8081" /></div>
-                      <div class="field"><label for="cloud-poll-interval">自动核对间隔</label><input id="cloud-poll-interval" name="poll_interval" type="text" maxlength="30" placeholder="1m" /></div>
-                      <div class="field"><label for="cloud-timeout">115 请求超时</label><input id="cloud-timeout" name="timeout" type="text" maxlength="30" placeholder="15s" /></div>
-                    </div>
+                    <summary>115 高级设置 <span>授权与核对</span></summary>
+                    <fieldset id="cloud-advanced-fields" disabled>
+                      <div class="form-grid">
+                        <div class="field"><label for="cloud-client-id">115 应用 ID</label><input id="cloud-client-id" name="client_id" type="text" inputmode="numeric" maxlength="20" pattern="[0-9]{1,20}" placeholder="100197303" /></div>
+                        <div class="field"><label for="cloud-access-token-env">令牌环境变量名</label><input id="cloud-access-token-env" name="access_token_env" type="text" maxlength="128" placeholder="MELOPORT_115_ACCESS_TOKEN" /></div>
+                        <div class="field"><label for="cloud-poll-interval">自动核对间隔</label><input id="cloud-poll-interval" name="poll_interval" type="text" maxlength="30" placeholder="1m" /></div>
+                        <div class="field"><label for="cloud-timeout">115 请求超时</label><input id="cloud-timeout" name="timeout" type="text" maxlength="30" placeholder="15s" /></div>
+                      </div>
+                    </fieldset>
                   </details>
                 </fieldset>
                 <div id="cloud-settings-error" class="form-error-summary" tabindex="-1" role="alert" hidden></div>

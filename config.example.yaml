@@ -41,6 +41,9 @@ server:
 # Restart after changes; Web QR login is held in process memory.
 cloud115:
   enabled: false
+  media_enabled: false
+  navidrome_enabled: false
+  navidrome_playlist_sync: false
   client_id: "100197303"
   access_token_env: MELOPORT_115_ACCESS_TOKEN
   # target_cid: "123456" # Dedicated non-root 115 directory that CD2 uploads into.
@@ -52,7 +55,6 @@ cloud115:
   timeout: 15s
   # navidrome_url: "http://127.0.0.1:4533"
   # navidrome_mount_root: "/music/115" # Target directory as seen by the music server.
-  # navidrome_playlist_sync: false # Publish a platform playlist after the full collection is indexed.
   # navidrome_username: "meloport"
   # navidrome_password_env: MELOPORT_NAVIDROME_PASSWORD # Password is read from this process environment variable.
 

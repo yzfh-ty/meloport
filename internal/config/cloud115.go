@@ -21,8 +21,10 @@ type Cloud115 struct {
 	TargetCID             string   `yaml:"target_cid"`
 	StagingDir            string   `yaml:"staging_dir"`
 	STRMDir               string   `yaml:"strm_dir"`
+	MediaEnabled          bool     `yaml:"media_enabled"`
 	MediaListen           string   `yaml:"media_listen"`
 	MediaBaseURL          string   `yaml:"media_base_url"`
+	NavidromeEnabled      bool     `yaml:"navidrome_enabled"`
 	NavidromeURL          string   `yaml:"navidrome_url"`
 	NavidromeMountRoot    string   `yaml:"navidrome_mount_root"`
 	NavidromeUsername     string   `yaml:"navidrome_username"`
@@ -47,33 +49,46 @@ func cloud115Defaults() Cloud115 {
 func (c *Config) validateCloud115(baseDir string) error {
 	cloud := &c.Cloud115
 	cloud.stagingDirInput, cloud.strmDirInput = cloud.StagingDir, cloud.STRMDir
-	if !idPattern.MatchString(cloud.ClientID) {
-		return errors.New("cloud115.client_id must be a numeric 115 application ID")
-	}
-	if !envPattern.MatchString(cloud.AccessTokenEnv) || (cloud.Enabled || cloud.TargetCID != "") && !idPattern.MatchString(cloud.TargetCID) {
-		return errors.New("cloud115 requires an access token environment variable name and a non-root numeric target_cid")
-	}
 	if cloud.NavidromePasswordEnv == "" {
 		cloud.NavidromePasswordEnv = "MELOPORT_NAVIDROME_PASSWORD"
 	}
-	if cloud.Timeout.Duration < time.Second || cloud.Timeout.Duration > time.Minute || cloud.PollInterval.Duration < 15*time.Second || cloud.PollInterval.Duration > 24*time.Hour {
-		return errors.New("cloud115.timeout must be between 1s and 1m and poll_interval between 15s and 24h")
+	for _, address := range []string{cloud.MediaBaseURL, cloud.NavidromeURL} {
+		parsed, err := url.Parse(address)
+		if err != nil || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || strings.Contains(address, "#") {
+			return errors.New("media and Navidrome URLs must not contain credentials, query parameters or fragments")
+		}
 	}
-	host, port, err := net.SplitHostPort(cloud.MediaListen)
-	portNumber, portErr := strconv.Atoi(port)
-	if err != nil || portErr != nil || portNumber < 1 || portNumber > 65535 || host == "" || cloud.MediaListen == c.Server.Listen {
-		return errors.New("cloud115.media_listen must specify its own host and port")
+	if cloud.Enabled {
+		if !idPattern.MatchString(cloud.ClientID) {
+			return errors.New("cloud115.client_id must be a numeric 115 application ID")
+		}
+		if !envPattern.MatchString(cloud.AccessTokenEnv) || !idPattern.MatchString(cloud.TargetCID) {
+			return errors.New("cloud115 requires an access token environment variable name and a non-root numeric target_cid")
+		}
+		if cloud.Timeout.Duration < time.Second || cloud.Timeout.Duration > time.Minute || cloud.PollInterval.Duration < 15*time.Second || cloud.PollInterval.Duration > 24*time.Hour {
+			return errors.New("cloud115.timeout must be between 1s and 1m and poll_interval between 15s and 24h")
+		}
 	}
-	public, err := parseCloudURL(cloud.MediaBaseURL)
-	if err != nil || (public.Scheme == "http" && !strings.EqualFold(public.Hostname(), "localhost") && !net.ParseIP(public.Hostname()).IsLoopback()) {
-		return errors.New("cloud115.media_base_url must use HTTPS or loopback HTTP, with no credentials, query or fragment")
+	if cloud.MediaEnabled {
+		host, port, err := net.SplitHostPort(cloud.MediaListen)
+		portNumber, portErr := strconv.Atoi(port)
+		if err != nil || portErr != nil || portNumber < 1 || portNumber > 65535 || host == "" || cloud.MediaListen == c.Server.Listen {
+			return errors.New("cloud115.media_listen must specify its own host and port")
+		}
 	}
-	cloud.MediaBaseURL = strings.TrimRight(public.String(), "/")
-	if (cloud.NavidromeURL == "") != (cloud.NavidromeMountRoot == "") {
-		return errors.New("set both cloud115.navidrome_url and navidrome_mount_root to enable the music proxy")
+	if cloud.Enabled || cloud.MediaEnabled {
+		public, err := parseCloudURL(cloud.MediaBaseURL)
+		if err != nil || (public.Scheme == "http" && !strings.EqualFold(public.Hostname(), "localhost") && !net.ParseIP(public.Hostname()).IsLoopback()) {
+			return errors.New("cloud115.media_base_url must use HTTPS or loopback HTTP, with no credentials, query or fragment")
+		}
+		cloud.MediaBaseURL = strings.TrimRight(public.String(), "/")
 	}
 	var navidromeURL *url.URL
-	if cloud.NavidromeURL != "" {
+	if cloud.NavidromeEnabled {
+		if !cloud.MediaEnabled {
+			return errors.New("Navidrome integration requires cloud115.media_enabled")
+		}
+		var err error
 		if navidromeURL, err = parseCloudURL(cloud.NavidromeURL); err != nil {
 			return errors.New("cloud115.navidrome_url must be an HTTP(S) URL without credentials, query or fragment")
 		}
@@ -81,12 +96,9 @@ func (c *Config) validateCloud115(baseDir string) error {
 			return errors.New("cloud115.navidrome_mount_root must be an absolute POSIX or Windows drive path")
 		}
 	}
-	if cloud.NavidromePasswordEnv != "" && !envPattern.MatchString(cloud.NavidromePasswordEnv) {
-		return errors.New("cloud115.navidrome_password_env must name an environment variable")
-	}
-	if cloud.NavidromePlaylistSync {
-		if !cloud.Enabled || cloud.NavidromeURL == "" || cloud.NavidromeMountRoot == "" {
-			return errors.New("Navidrome playlist sync requires enabled 115 storage, navidrome_url and navidrome_mount_root")
+	if cloud.NavidromeEnabled && cloud.NavidromePlaylistSync {
+		if !cloud.Enabled {
+			return errors.New("Navidrome playlist sync requires enabled 115 storage")
 		}
 		if navidromeURL.Scheme == "http" && !strings.EqualFold(navidromeURL.Hostname(), "localhost") && !net.ParseIP(navidromeURL.Hostname()).IsLoopback() {
 			return errors.New("Navidrome playlist sync requires HTTPS for non-loopback URLs")
@@ -101,6 +113,7 @@ func (c *Config) validateCloud115(baseDir string) error {
 	if !cloud.Enabled {
 		return nil
 	}
+	var err error
 	if cloud.StagingDir, err = ResolveMusicDirectory(baseDir, cloud.StagingDir); err != nil {
 		return errors.New("cloud115.staging_dir must be a valid directory")
 	}

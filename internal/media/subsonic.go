@@ -13,6 +13,9 @@ import (
 const maxFormSize = 64 << 10
 
 func (h *handler) redirectStream(w http.ResponseWriter, r *http.Request) bool {
+	if h.lookup == nil || h.resolver == nil {
+		return false
+	}
 	params, ok := streamParams(r)
 	if !ok {
 		return false
