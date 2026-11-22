@@ -181,9 +181,11 @@ func (s *Store) migrate(ctx context.Context) error {
 			}
 		}
 	}
-	for _, statement := range cloudSchema {
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf("migrate 115 file state: %w", err)
+	if version < 3 {
+		for _, statement := range cloudSchema {
+			if _, err := tx.ExecContext(ctx, statement); err != nil {
+				return fmt.Errorf("migrate 115 file state: %w", err)
+			}
 		}
 	}
 	if version < 4 {
