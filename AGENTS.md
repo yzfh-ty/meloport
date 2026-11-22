@@ -4,7 +4,7 @@
 - Fetch playlists, search results and song metadata directly from the music platform first. Use ChKSz for missing-file audio resolution. Metadata may fall back to a documented ChKSz endpoint only after a native failure and when `metadata.fallback_to_api` is enabled.
 - A valid empty native result is successful. Cancellation must not trigger a paid fallback. Do not invent QQ or Kugou playlist endpoints on ChKSz.
 - Treat native NetEase IDs, QQ MIDs and Kugou hashes/audio identifiers separately. Confirm an identifier accepted by the audio resolver; reject ambiguous versions rather than silently substituting a different song.
-- Native metadata and an all-skipped sync must work without a ChKSz key. Read keys and optional platform cookies from environment variables only. Never include them in YAML, SQLite, logs, UI responses or Git.
+- Native metadata and an all-skipped sync must work without a ChKSz key. Read optional platform cookies from environment variables only. ChKSz keys may also use api.key in ignored local YAML for development. Never include real credentials in tracked YAML, SQLite, logs, UI responses or Git.
 - Preserve incremental synchronization: download missing files, retain songs removed from remote playlists, and never delete audio when deleting a subscription.
 - Serve the embedded Web UI from the same Go binary. Persist task/default-rule changes to YAML and update scheduling safely. Keep the local management listener on loopback and retain same-origin write protection.
 - Develop and verify locally; Docker packaging is deferred until requested. Every test or preview must stop its owned processes and release its ports afterward.

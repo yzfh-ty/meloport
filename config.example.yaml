@@ -7,7 +7,8 @@ run_on_start: false # No immediate API requests when starting the scheduler.
 
 api:
   base_url: https://api.chksz.com
-  key_env: CHKSZ_API_KEY # Set the real key in your process environment, never here.
+  key_env: CHKSZ_API_KEY # A valid environment key takes precedence over local YAML.
+  # key: "YOUR_PERSONAL_CHKSZ_KEY" # Optional in your ignored local config.yaml.
   timeout: 30s
   min_interval: 3100ms # Do not reduce below the documented 20 requests/minute.
 

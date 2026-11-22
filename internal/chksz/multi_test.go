@@ -242,6 +242,39 @@ func TestSearchFallbackRejectsInvalidInputsAndResponses(t *testing.T) {
 	}
 }
 
+func TestLazyLocalKeyFallbackAndEnvironmentPrecedence(t *testing.T) {
+	const envName = "MELOPORT_TEST_LOCAL_KEY"
+	const localKey = "chksz_local_fixture"
+	for _, environment := range []string{"", "invalid-key", testKey} {
+		t.Run(fmt.Sprintf("environment-%d", len(environment)), func(t *testing.T) {
+			t.Setenv(envName, environment)
+			want := localKey
+			if environment == testKey {
+				want = testKey
+			}
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if r.URL.Query().Get("apikey") != want {
+					t.Error("wrong key source selected")
+				}
+				io.WriteString(w, `{"url":"https://audio.example/song.flac"}`)
+			}))
+			defer server.Close()
+			lazy := NewLazy(Options{BaseURL: server.URL, APIKey: localKey}, envName)
+			if !KeyConfigured(envName, localKey) || calls.Load() != 0 {
+				t.Fatal("key status check sent a request or rejected the configured key")
+			}
+			if _, err := lazy.ResolvePlatform(context.Background(), "qq", "003MID", ""); err != nil {
+				t.Fatal(err)
+			}
+			if calls.Load() != 1 {
+				t.Fatal("resolution did not issue exactly one request")
+			}
+		})
+	}
+}
+
 func TestLazyMissingThenConfiguredKey(t *testing.T) {
 	const envName = "MELOPORT_TEST_LAZY_API_KEY"
 	t.Setenv(envName, "")
@@ -265,7 +298,7 @@ func TestLazyMissingThenConfiguredKey(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	lazy := NewLazy(Options{BaseURL: server.URL, APIKey: "chksz_option_must_not_override_environment"}, envName)
+	lazy := NewLazy(Options{BaseURL: server.URL}, envName)
 	for _, call := range []func() error{
 		func() error { _, err := lazy.Playlist(context.Background(), "123"); return err },
 		func() error { _, err := lazy.Search(context.Background(), "qq", "query", 20, 0); return err },

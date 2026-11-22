@@ -2,7 +2,7 @@
   color-scheme: light dark;
   --ink: light-dark(#18212c, #e6ebf2);
   --muted: light-dark(#495667, #b4c0ce);
-  --subtle: light-dark(#657185, #9aa9bb);
+  --subtle: light-dark(#626e82, #9aa9bb);
   --canvas: light-dark(#edf2f7, #171d29);
   --rail: light-dark(#eef3fa, #141d2b);
   --surface: light-dark(#fafcff, #212a39);
@@ -116,9 +116,14 @@ main { flex: 1; min-width: 0; }
 .connection-state.is-connected .connection-dot { background: var(--success); }
 .connection-state.is-offline { color: var(--danger); }
 .connection-state.is-offline .connection-dot { background: var(--danger); }
-.sidebar-footer { display: flex; align-items: center; gap: 8px; padding: 16px 5px 0; margin-top: auto; color: var(--muted); border-top: 1px solid var(--line); }
+.sidebar-footer { display: flex; flex-direction: column; gap: 8px; padding: 16px 5px 0; margin-top: auto; color: var(--muted); border-top: 1px solid var(--line); }
+.sidebar-status { display: flex; align-items: center; gap: 8px; }
+.button.sidebar-logout { width: 100%; min-height: 44px; justify-content: flex-start; padding-inline: 12px; color: var(--muted); background: transparent; }
+.sidebar-logout:hover:not(:disabled) { color: var(--ink); background: var(--hover); }
+.sidebar-collapsed .sidebar-slot .sidebar-logout { width: 44px; align-self: center; justify-content: center; gap: 0; padding-inline: 0; font-size: 0; }
 .sidebar-footer .connection-state { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-collapsed .sidebar-footer { justify-content: center; padding-inline: 0; }
+.sidebar-collapsed .sidebar-footer .sidebar-status { justify-content: center; }
 .sidebar-collapsed .sidebar-footer .connection-state { flex: none; }
 .sidebar-collapsed .sidebar-footer #connection-label { display: none; }
 main { padding-block: 36px 28px; }
@@ -459,6 +464,7 @@ fieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
   .navigation-drawer { position: fixed; inset: 0 auto 0 0; width: min(268px, calc(100% - 44px)); max-width: none; height: 100dvh; max-height: none; padding: 0; margin: 0; overflow: hidden; border: 0; background: var(--rail); }
   .navigation-drawer[open] { animation: reveal-drawer var(--duration) ease-out; }
   .navigation-drawer .drawer-close { display: inline-flex; }
+  .navigation-drawer > .drawer-close { position: absolute; top: 12px; right: 12px; z-index: 1; }
   .navigation-drawer .sidebar-toggle { display: none; }
   .navigation-drawer .drawer-close:hover { color: var(--ink); background: var(--hover); }
   .navigation-drawer .sidebar { height: 100%; }

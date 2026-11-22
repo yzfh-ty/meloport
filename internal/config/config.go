@@ -63,6 +63,7 @@ type Config struct {
 
 type API struct {
 	BaseURL     string   `yaml:"base_url"`
+	Key         string   `yaml:"key,omitempty" json:"-"`
 	KeyEnv      string   `yaml:"key_env"`
 	Timeout     Duration `yaml:"timeout"`
 	MinInterval Duration `yaml:"min_interval"`

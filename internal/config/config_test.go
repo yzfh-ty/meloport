@@ -9,6 +9,18 @@ import (
 	"time"
 )
 
+func TestLocalAPIKeyLoadsWithoutJSONExposure(t *testing.T) {
+	const key = "chksz_config_fixture"
+	cfg, err := Load(writeConfig(t, "api:\n  key: "+key+"\n"))
+	if err != nil || cfg.API.Key != key {
+		t.Fatal("local API key failed to load")
+	}
+	data, err := json.Marshal(cfg.API)
+	if err != nil || strings.Contains(string(data), key) {
+		t.Fatal("local API key exposed in JSON")
+	}
+}
+
 func TestLocalAdminPasswordValidationAndJSONRedaction(t *testing.T) {
 	for _, password := range []string{"", "123456789012", "开发测试", strings.Repeat("a", 1024)} {
 		cfg, err := Load(writeConfig(t, "server:\n  admin_password: '"+password+"'\n"))

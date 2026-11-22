@@ -26,7 +26,7 @@ Remove-Variable adminPassword
 2. 在「系统设置」设置下载根目录、默认同步时间和音质。每个任务可以覆盖默认规则。默认下载到 `data/music/<任务ID>/`。
 3. 点击任务的运行按钮进行一次同步，在「运行记录」查看结果。已下载的完整文件会跳过。远端移除歌曲或删除任务时，已下载的音频会保留。
 
-启动控制台、原生搜索和预览无需 Key。下载缺少的音频需要个人 ChKSz API Key，可在 [ChKSz 账户页面](https://api.chksz.com/login) 获取。在启动服务的同一个 PowerShell 窗口中设置环境变量，再启动服务。
+启动控制台、原生搜索和预览无需 Key。下载缺少的音频需要个人 ChKSz API Key，可在 [ChKSz 账户页面](https://api.chksz.com/login) 获取。开发环境可直接写入被 Git 忽略的 `config.yaml` 的 `api.key`，然后重启服务。有效的密钥环境变量优先；环境变量缺失或格式无效时回退到 YAML。也可在启动服务的同一个 PowerShell 窗口中设置环境变量：
 
 ```powershell
 $secureKey = Read-Host 'ChKSz API Key' -AsSecureString
@@ -35,7 +35,7 @@ Remove-Variable secureKey
 .\bin\meloport.exe serve -config config.yaml
 ```
 
-歌单、搜索和元数据优先直连音乐平台。开启「直连失败时允许 ChKSz 回退」后，支持回退的元数据请求会使用 ChKSz 额度。需要平台登录时，可通过配置示例中对应的环境变量提供 Cookie。实际 Key 和 Cookie 只放进程环境。
+歌单、搜索和元数据优先直连音乐平台。开启「直连失败时允许 ChKSz 回退」后，支持回退的元数据请求会使用 ChKSz 额度。需要平台登录时，可通过配置示例中对应的环境变量提供 Cookie。实际 Key 只放进程环境或本地配置，Cookie 只放进程环境；管理接口不返回密钥。
 
 ## 保存配置与管理音频
 

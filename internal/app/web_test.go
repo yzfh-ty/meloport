@@ -243,6 +243,18 @@ func TestWebStaticRoutesOverviewAndKeyRedaction(t *testing.T) {
 	webStatus(t, webRequest(t, f, http.MethodGet, "/", nil), 200)
 }
 
+func TestWebLocalKeyStatusAndRedaction(t *testing.T) {
+	f := newWebFixture(t)
+	t.Setenv(webTestKeyEnv, "")
+	const key = "chksz_web_config_fixture"
+	f.control.cfg.API.Key = key
+	w := webRequest(t, f, http.MethodGet, "/api/overview", nil)
+	webStatus(t, w, 200)
+	if !webOverviewOf(t, f).KeyConfigured || strings.Contains(w.Body.String(), key) {
+		t.Fatal("local key status is incorrect or the key was exposed")
+	}
+}
+
 func TestWebTaskCRUDPersistenceScheduleInheritanceAndNoAudioDeletion(t *testing.T) {
 	f := newWebFixture(t)
 	one, two := webTask("one", "netease"), webTask("two", "qq")

@@ -12,7 +12,19 @@ import (
 
 var keyPattern = regexp.MustCompile(`^chksz_[A-Za-z0-9._~-]+$`)
 
-func KeyConfigured(environment string) bool { return keyPattern.MatchString(os.Getenv(environment)) }
+func KeyConfigured(environment string, configured ...string) bool {
+	return keyPattern.MatchString(resolveKey(environment, configured...))
+}
+
+func resolveKey(environment string, configured ...string) string {
+	if key := os.Getenv(environment); keyPattern.MatchString(key) {
+		return key
+	}
+	if len(configured) > 0 {
+		return configured[0]
+	}
+	return ""
+}
 
 // Lazy reads a key only when resolution or a supported metadata fallback is used.
 type Lazy struct {
@@ -31,9 +43,9 @@ func (l *Lazy) get() (*Client, error) {
 		return l.client, nil
 	}
 	options := l.options
-	options.APIKey = os.Getenv(l.keyEnv)
+	options.APIKey = resolveKey(l.keyEnv, options.APIKey)
 	if !keyPattern.MatchString(options.APIKey) {
-		return nil, &APIError{Status: 401, Message: fmt.Sprintf("set environment variable %s to your personal chksz_ key for audio resolution or metadata fallback", l.keyEnv)}
+		return nil, &APIError{Status: 401, Message: fmt.Sprintf("set api.key in your local configuration or environment variable %s to your personal chksz_ key for audio resolution or metadata fallback", l.keyEnv)}
 	}
 	client, err := New(options)
 	if err != nil {

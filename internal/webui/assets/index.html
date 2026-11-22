@@ -42,6 +42,9 @@
       <symbol id="icon-plus" viewBox="0 0 24 24">
         <path d="M12 5v14M5 12h14" />
       </symbol>
+      <symbol id="icon-logout" viewBox="0 0 24 24">
+        <path d="M9 4H4v16h5M13 8l4 4-4 4M8 12h12" />
+      </symbol>
       <symbol id="icon-play" viewBox="0 0 24 24">
         <path d="m8 5 11 7-11 7z" />
       </symbol>
@@ -200,6 +203,7 @@
             </a>
           </nav>
           <div class="sidebar-footer">
+            <div class="sidebar-status">
             <span id="connection-state" class="connection-state"
               ><span class="connection-dot"></span
               ><span id="connection-label">正在连接</span></span
@@ -215,6 +219,11 @@
               </svg>
             </button>
             <span id="breadcrumb-current" class="sr-only">任务概览</span>
+            </div>
+            <button id="logout-button" class="button sidebar-logout" type="button" aria-label="退出登录" title="退出登录">
+              <svg class="icon" aria-hidden="true"><use href="#icon-logout" /></svg>
+              <span class="nav-label">退出登录</span>
+            </button>
           </div>
         </aside>
       </div>
@@ -1063,7 +1072,7 @@
                   <div class="environment-label">密钥环境变量</div>
                   <code id="settings-key-env" class="environment-value">—</code>
                   <p class="field-hint">
-                    控制台不会显示或保存实际密钥。请在服务运行环境中配置该变量。
+                    在本地配置的 api.key 或该环境变量中设置密钥，修改后重启服务。控制台不会显示实际密钥。
                   </p>
                 </section>
                 <div class="quiet-note">
@@ -1077,7 +1086,7 @@
           </section>
         </main>
         <footer class="workspace-footer">
-          <span>Meloport · 本地管理</span><button id="logout-button" class="button button-secondary button-small" type="button">退出登录</button>
+          <span>Meloport · 本地管理</span>
         </footer>
       </div>
     </div>

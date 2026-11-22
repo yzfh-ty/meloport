@@ -311,7 +311,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const pending = Array.isArray(queue.pending) ? queue.pending.length : 0;
     text('queue-summary', running || pending ? `正在同步 ${running} 项 · 排队 ${pending} 项` : '同步队列空闲');
     show('key-notice', !data.api_key_configured);
-    text('key-notice-text', `平台检索和歌单预览仍可使用。下载解析前，请在服务运行环境中配置 ${data.api_key_env || 'CHKSZ_API_KEY'}。`);
+    text('key-notice-text', `平台检索和歌单预览仍可使用。下载解析前，请配置本地 api.key 或环境变量 ${data.api_key_env || 'CHKSZ_API_KEY'}，然后重启服务。`);
     show('queue-notice', Boolean(queue.paused));
     if (queue.paused) {
       text('queue-notice-text', queue.restart_required ? '解析访问已暂停。请修复密钥或权限后重启服务；平台检索和歌单预览仍可使用。' : `解析队列已暂停${date(queue.resume_at) !== '—' ? `，最早于 ${date(queue.resume_at)} 后恢复接收定时任务` : '，请检查服务日志'}。暂停期间不会堆积补跑。`);

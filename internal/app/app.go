@@ -137,7 +137,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 	}
 	logger := slog.New(slog.NewJSONHandler(stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	metadataHTTP := platform.NewHTTP(nil, cfg.Metadata.Timeout.Duration, cfg.Metadata.MinInterval.Duration)
-	gateway := chksz.NewLazy(chksz.Options{BaseURL: cfg.API.BaseURL, Timeout: cfg.API.Timeout.Duration, MinInterval: cfg.API.MinInterval.Duration}, cfg.API.KeyEnv)
+	gateway := chksz.NewLazy(chksz.Options{BaseURL: cfg.API.BaseURL, APIKey: cfg.API.Key, Timeout: cfg.API.Timeout.Duration, MinInterval: cfg.API.MinInterval.Duration}, cfg.API.KeyEnv)
 	metadata := provider.New(map[string]provider.Source{
 		"netease": netease.New(netease.Options{HTTP: metadataHTTP, Cookie: optionalEnv(cfg.Metadata.NeteaseCookieEnv)}),
 		"qq":      qq.New(qq.Options{HTTP: metadataHTTP, Cookie: optionalEnv(cfg.Metadata.QQCookieEnv)}),
