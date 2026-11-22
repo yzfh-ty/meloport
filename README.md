@@ -18,7 +18,7 @@ Remove-Variable adminPassword
 
 打开 [本地控制台](http://127.0.0.1:8080/)。首次运行会在缺少 `config.yaml` 时创建空任务配置。已有配置会继续使用。修改管理端口时，以启动日志为准。按 `Ctrl+C` 停止服务。
 
-使用固定账号 `admin` 和上面设置的密码登录。只提供一个管理员账号；没有注册或用户管理。开发测试也可在本地 YAML 中设置 `server.admin_password`（12–1024 字节）；长度有效的 `MELOPORT_ADMIN_PASSWORD` 优先，缺失或长度无效时使用 YAML 密码。没有有效密码时控制台保持锁定。密码不写入数据库或管理接口响应。登录有效期为 12 小时，可在页面底部退出；服务重启后重新登录。Linux/WSL 配置方式和会话说明见 [控制台登录](docs/login.md)。
+登录页只需输入上面设置的管理员密钥，无需用户名。开发测试也可在本地 YAML 中设置 `server.admin_password`（12–1024 字节）；长度有效的 `MELOPORT_ADMIN_PASSWORD` 优先，缺失或长度无效时使用 YAML 中的密钥。该密钥与 ChKSz 解析密钥独立。没有有效管理员密钥时控制台保持锁定。密钥不写入数据库或管理接口响应。登录有效期为 12 小时，可在侧边栏底部退出；服务重启后重新登录。Linux/WSL 配置方式和会话说明见 [控制台登录](docs/login.md)。
 
 ## 添加订阅和下载
 
@@ -60,7 +60,7 @@ Navidrome 曲库应扫描 CD2 挂载的真实音频目录。需要 115 直链时
 
 ## 本地开发
 
-双击 `start-test.cmd` 或运行 `scripts/dev.ps1 -Action dev -Config config.yaml`。在本地 `config.yaml` 的 `server.admin_password` 中填写测试密码后，可直接启动并使用账号 `admin` 登录。改动网页资源后刷新浏览器，改动 Go 代码后重启开发服务。
+双击 `start-test.cmd` 或运行 `scripts/dev.ps1 -Action dev -Config config.yaml`。在本地 `config.yaml` 的 `server.admin_password` 中填写测试密钥后，可直接启动并输入该密钥登录。改动网页资源后刷新浏览器，改动 Go 代码后重启开发服务。
 
 ```powershell
 .\scripts\dev.ps1 -Action test

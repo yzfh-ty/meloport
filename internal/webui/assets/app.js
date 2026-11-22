@@ -1780,7 +1780,7 @@ document.addEventListener('DOMContentLoaded', () => {
       lockSession();
       show('login-setup', !session.configured);
       $('login-fields').disabled = !session.configured;
-      text('login-status', session.configured ? '' : '管理员密码尚未配置。');
+      text('login-status', session.configured ? '' : '管理员密钥尚未配置。');
       show('login-retry', !session.configured);
     } catch (error) {
       lockSession(error.message);
@@ -1791,11 +1791,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   $('login-form').addEventListener('submit', async (event) => {
     event.preventDefault();
-    if (!$('login-password').value) { text('login-error', '请输入密码。'); show('login-error', true); $('login-password').focus(); return; }
+    if (!$('login-password').value) { text('login-error', '请输入管理员密钥。'); show('login-error', true); $('login-password').focus(); return; }
     await busyButton($('login-submit'), '正在登录', async () => {
       show('login-error', false);
       try {
-        await request('/api/session', { method: 'POST', body: { username: $('login-username').value, password: $('login-password').value } });
+        await request('/api/session', { method: 'POST', body: { password: $('login-password').value } });
         $('login-password').value = '';
         unlockSession();
       } catch (error) {

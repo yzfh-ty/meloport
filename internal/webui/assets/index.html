@@ -128,14 +128,13 @@
           <span class="brand-name">Meloport</span>
         </div>
         <h1 id="login-title">登录控制台</h1>
-        <p class="login-intro">管理你的音乐订阅与同步。</p>
+        <p class="login-intro">输入管理员密钥，管理音乐订阅与同步。</p>
         <p id="login-status" class="field-hint" role="status">正在检查登录状态…</p>
         <div id="login-error" class="inline-error" role="alert" hidden></div>
-        <p id="login-setup" class="notice notice-info" hidden>请先在服务环境中设置 <code>MELOPORT_ADMIN_PASSWORD</code>（12–1024 字节），然后重启 Meloport。</p>
+        <p id="login-setup" class="notice notice-info" hidden><span>请先通过环境变量 <code>MELOPORT_ADMIN_PASSWORD</code> 或本地配置 <code>server.admin_password</code> 设置管理员密钥（12–1024 字节），然后重启 Meloport。</span></p>
         <form id="login-form" novalidate>
           <fieldset id="login-fields" disabled>
-            <div class="field"><label for="login-username">账号</label><input id="login-username" name="username" value="admin" autocomplete="username" readonly /></div>
-            <div class="field"><label for="login-password">密码</label><input id="login-password" name="password" type="password" autocomplete="current-password" required maxlength="1024" aria-describedby="login-error" /></div>
+            <div class="field"><label for="login-password">管理员密钥</label><input id="login-password" name="password" type="password" autocomplete="current-password" required maxlength="1024" placeholder="请输入管理员密钥" aria-describedby="login-error" /></div>
             <button id="login-submit" class="button button-primary" type="submit">登录</button>
           </fieldset>
         </form>

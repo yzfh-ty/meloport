@@ -423,7 +423,7 @@ func TestServeLocalPasswordAndEnvironmentPrecedence(t *testing.T) {
 			})
 			address := waitServiceEvent(t, events.listening)
 			waitServiceEvent(t, events.ready)
-			body := strings.NewReader(`{"username":"admin","password":"` + tc.login + `"}`)
+			body := strings.NewReader(`{"password":"` + tc.login + `"}`)
 			request, err := http.NewRequest("POST", "http://"+address+"/api/session", body)
 			if err != nil {
 				t.Fatal(err)

@@ -24,11 +24,22 @@ func authFixture(t *testing.T, password string) *webFixture {
 
 func adminLogin(t *testing.T, f *webFixture, password string) *httptest.ResponseRecorder {
 	t.Helper()
-	return webRequest(t, f, "POST", "/api/session", map[string]string{"username": "admin", "password": password})
+	return webRequest(t, f, "POST", "/api/session", map[string]string{"password": password})
 }
 
 func withAdminCookie(cookie *http.Cookie) func(*http.Request) {
 	return func(r *http.Request) { r.AddCookie(cookie) }
+}
+
+func TestManagementKeyOnlyLoginAndLegacyPayload(t *testing.T) {
+	f := authFixture(t, adminTestPassword)
+	status := webRequest(t, f, "GET", "/api/session", nil)
+	if strings.Contains(status.Body.String(), "username") {
+		t.Fatal("key-only login advertised a username")
+	}
+	webStatus(t, adminLogin(t, f, adminTestPassword), http.StatusOK)
+	webStatus(t, webRequest(t, f, "POST", "/api/session", map[string]string{"username": "admin", "password": adminTestPassword}), http.StatusOK)
+	webStatus(t, webRequest(t, f, "POST", "/api/session", map[string]string{"username": "admin"}), http.StatusUnauthorized)
 }
 
 func TestManagementLoginProtectsAPIsAndRevokesLogout(t *testing.T) {

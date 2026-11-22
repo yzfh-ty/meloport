@@ -58,23 +58,22 @@ func (a *managementAuth) protect(next http.Handler) http.Handler {
 }
 
 func (a *managementAuth) status(w http.ResponseWriter, r *http.Request) {
-	webJSON(w, http.StatusOK, map[string]any{"authenticated": a.authenticated(r), "configured": a.configured, "username": "admin"})
+	webJSON(w, http.StatusOK, map[string]any{"authenticated": a.authenticated(r), "configured": a.configured})
 }
 
 func (a *managementAuth) login(w http.ResponseWriter, r *http.Request) {
 	if !a.configured {
-		webError(w, http.StatusServiceUnavailable, "请在服务环境中设置 MELOPORT_ADMIN_PASSWORD（12–1024 字节）并重启 Meloport。")
+		webError(w, http.StatusServiceUnavailable, "请设置管理员密钥 MELOPORT_ADMIN_PASSWORD（12–1024 字节）或本地 server.admin_password，然后重启 Meloport。")
 		return
 	}
 	var input struct {
-		Username string `json:"username"`
+		Username string `json:"username"` // Accepted for older clients; authentication uses only the key.
 		Password string `json:"password"`
 	}
 	if !readWebJSON(w, r, &input) {
 		return
 	}
-	user, pass := sha256.Sum256([]byte(input.Username)), sha256.Sum256([]byte(input.Password))
-	admin := sha256.Sum256([]byte("admin"))
+	pass := sha256.Sum256([]byte(input.Password))
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	now := a.now()
@@ -83,13 +82,13 @@ func (a *managementAuth) login(w http.ResponseWriter, r *http.Request) {
 		webError(w, http.StatusTooManyRequests, "尝试次数过多，请稍后重试。")
 		return
 	}
-	if subtle.ConstantTimeCompare(user[:], admin[:])&subtle.ConstantTimeCompare(pass[:], a.password[:]) != 1 {
+	if subtle.ConstantTimeCompare(pass[:], a.password[:]) != 1 {
 		a.failures++
 		if a.failures >= 5 {
 			a.blockedUntil = now.Add(30 * time.Second)
 			a.failures = 0
 		}
-		webError(w, http.StatusUnauthorized, "账号或密码不正确。")
+		webError(w, http.StatusUnauthorized, "管理员密钥不正确。")
 		return
 	}
 	var token [32]byte
