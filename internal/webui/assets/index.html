@@ -1035,25 +1035,25 @@
                   </div>
                 </form>
               </section>
-              <aside class="settings-aside">
-                <section class="panel theme-panel" aria-labelledby="appearance-title">
-                  <h2 id="appearance-title">界面主题</h2>
-                  <fieldset id="theme-options" class="theme-options" aria-labelledby="appearance-title">
-                    <label class="theme-option">
-                      <input class="sr-only" type="radio" name="theme" value="system" checked />
-                      <span><svg class="icon" aria-hidden="true"><use href="#icon-monitor" /></svg>跟随系统</span>
-                    </label>
-                    <label class="theme-option">
-                      <input class="sr-only" type="radio" name="theme" value="light" />
-                      <span><svg class="icon" aria-hidden="true"><use href="#icon-sun" /></svg>浅色</span>
-                    </label>
-                    <label class="theme-option">
-                      <input class="sr-only" type="radio" name="theme" value="dark" />
-                      <span><svg class="icon" aria-hidden="true"><use href="#icon-moon" /></svg>深色</span>
-                    </label>
-                  </fieldset>
-                </section>
-                <section class="panel key-panel" aria-labelledby="key-title">
+              <section class="panel theme-panel" aria-labelledby="appearance-title">
+                <h2 id="appearance-title">界面主题</h2>
+                <fieldset id="theme-options" class="theme-options" aria-labelledby="appearance-title">
+                  <label class="theme-option">
+                    <input class="sr-only" type="radio" name="theme" value="system" checked />
+                    <span><svg class="icon" aria-hidden="true"><use href="#icon-monitor" /></svg>跟随系统</span>
+                  </label>
+                  <label class="theme-option">
+                    <input class="sr-only" type="radio" name="theme" value="light" />
+                    <span><svg class="icon" aria-hidden="true"><use href="#icon-sun" /></svg>浅色</span>
+                  </label>
+                  <label class="theme-option">
+                    <input class="sr-only" type="radio" name="theme" value="dark" />
+                    <span><svg class="icon" aria-hidden="true"><use href="#icon-moon" /></svg>深色</span>
+                  </label>
+                </fieldset>
+              </section>
+              <section class="panel key-panel" aria-labelledby="key-title">
+                <div class="settings-section-heading">
                   <div class="key-symbol">
                     <svg class="icon" aria-hidden="true">
                       <use href="#icon-link" />
@@ -1065,22 +1065,22 @@
                     class="status-badge status-neutral"
                     >正在读取</span
                   >
-                  <p>
-                    ChKSz 用于取得音频地址；平台歌单与歌曲信息优先直接读取。
-                  </p>
-                  <div class="environment-label">密钥环境变量</div>
-                  <code id="settings-key-env" class="environment-value">—</code>
-                  <p class="field-hint">
-                    在本地配置的 api.key 或该环境变量中设置密钥，修改后重启服务。控制台不会显示实际密钥。
-                  </p>
-                </section>
-                <div class="quiet-note">
-                  <svg class="icon" aria-hidden="true">
-                    <use href="#icon-folder" />
-                  </svg>
-                  <p>只做增量同步。<br />移除订阅不会删除已下载的音频文件。</p>
                 </div>
-              </aside>
+                <p>
+                  ChKSz 用于取得音频地址；平台歌单与歌曲信息优先直接读取。
+                </p>
+                <div class="environment-label">密钥环境变量</div>
+                <code id="settings-key-env" class="environment-value">—</code>
+                <p class="field-hint">
+                  在本地配置的 api.key 或该环境变量中设置密钥，修改后重启服务。控制台不会显示实际密钥。
+                </p>
+              </section>
+              <div class="quiet-note">
+                <svg class="icon" aria-hidden="true">
+                  <use href="#icon-folder" />
+                </svg>
+                <p>只做增量同步。移除订阅不会删除已下载的音频文件。</p>
+              </div>
             </div>
           </section>
         </main>
