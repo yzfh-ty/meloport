@@ -23,12 +23,10 @@
   applyTheme();
   document.addEventListener('DOMContentLoaded', () => {
     const button = document.getElementById('theme-toggle');
-    const label = document.getElementById('theme-label');
     const icon = document.getElementById('theme-icon');
 
     function updateControl() {
       const current = themes[theme];
-      label.textContent = `主题：${current.label}`;
       icon.setAttribute('href', `#icon-${current.icon}`);
       const description = `当前主题：${current.label}；点击切换为${themes[current.next].label}`;
       button.setAttribute('aria-label', description);
@@ -288,7 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!data || !Array.isArray(data.tasks) || !Array.isArray(data.runs) || !data.stats) throw new Error('服务返回的控制台数据结构不完整，请检查版本与服务日志。');
         state.overview = data;
         $('connection-state').className = 'connection-state is-connected';
-        text('connection-label', '服务已连接');
+        text('connection-label', '已连接');
         text('updated-at', `更新于 ${new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date())}`);
         globalError('');
         renderOverview();
@@ -318,7 +316,6 @@ document.addEventListener('DOMContentLoaded', () => {
     text('stat-enabled', number(data.stats.enabled));
     text('stat-downloaded', number(data.stats.downloaded));
     text('stat-bytes', bytes(data.stats.bytes));
-    text('nav-task-count', number(data.stats.tasks));
     text('task-count', data.tasks.length);
     text('task-timezone', `默认：${scheduleUI.describe(data.schedule)} · ${data.timezone}`);
     $('add-task-button').disabled = false;
@@ -1617,7 +1614,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (link.dataset.nav === next) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
     });
-    if ($('breadcrumb-current')) text('breadcrumb-current', titles[next]);
     document.title = `${titles[next]} · Meloport`;
     const previous = state.route;
     const changed = previous && next !== previous;
@@ -1630,7 +1626,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   $('refresh-button').addEventListener('click', async (event) => {
-    await busyButton(event.currentTarget, '', async () => refreshOverview({ force: true }));
+    const button = event.currentTarget;
+    if (button.disabled) return;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    try { await refreshOverview({ force: true }); }
+    finally {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+    }
   });
   $('add-task-button').addEventListener('click', (event) => openTask(null, event.currentTarget));
   $('empty-add-task-button').addEventListener('click', (event) => openTask(null, event.currentTarget));
@@ -1822,7 +1826,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('login-retry').addEventListener('click', checkSession);
   $('logout-button').addEventListener('click', async () => {
-    await busyButton($('logout-button'), '正在退出', async () => {
+    await busyButton($('logout-button'), '', async () => {
       try { await request('/api/session', { method: 'DELETE' }); lockSession(); $('login-password').focus(); }
       catch (error) { toast(error.message, true); }
     });

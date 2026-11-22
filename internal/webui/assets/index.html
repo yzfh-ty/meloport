@@ -169,63 +169,52 @@
               </svg>
             </button>
           </div>
-          <p class="nav-caption">工作空间</p>
           <nav class="navigation" aria-label="主导航">
-            <a href="#overview" data-nav="overview" aria-current="page" aria-label="任务概览" title="任务概览">
-              <svg class="icon" aria-hidden="true"><use href="#icon-grid" /></svg>
-              <span class="nav-label">任务概览</span>
-              <span id="nav-task-count" class="nav-count" aria-hidden="true">—</span>
-            </a>
-            <a href="#audio" data-nav="audio" aria-label="音频文件" title="音频文件">
-              <svg class="icon" aria-hidden="true"><use href="#icon-music" /></svg>
-              <span class="nav-label">音频文件</span>
-            </a>
-            <a href="#cloud115" data-nav="cloud115" aria-label="115 与 STRM" title="115 与 STRM">
-              <svg class="icon" aria-hidden="true"><use href="#icon-cloud" /></svg>
-              <span class="nav-label">115 与 STRM</span>
-            </a>
-            <a href="#search" data-nav="search" aria-label="歌曲检索" title="歌曲检索">
-              <svg class="icon" aria-hidden="true"><use href="#icon-search" /></svg>
-              <span class="nav-label">歌曲检索</span>
-            </a>
-            <a href="#rankings" data-nav="rankings" aria-label="排行榜" title="排行榜">
-              <svg class="icon" aria-hidden="true"><use href="#icon-list" /></svg>
-              <span class="nav-label">排行榜</span>
-            </a>
-            <a href="#history" data-nav="history" aria-label="运行记录" title="运行记录">
-              <svg class="icon" aria-hidden="true"><use href="#icon-clock" /></svg>
-              <span class="nav-label">运行记录</span>
-            </a>
-            <a href="#settings" data-nav="settings" aria-label="系统设置" title="系统设置">
-              <svg class="icon" aria-hidden="true"><use href="#icon-settings" /></svg>
-              <span class="nav-label">系统设置</span>
-            </a>
+            <div class="navigation-group" role="group" aria-label="音乐">
+              <a href="#overview" data-nav="overview" aria-current="page" aria-label="任务概览" title="任务概览">
+                <svg class="icon" aria-hidden="true"><use href="#icon-grid" /></svg>
+                <span class="nav-label">任务概览</span>
+              </a>
+              <a href="#audio" data-nav="audio" aria-label="音频文件" title="音频文件">
+                <svg class="icon" aria-hidden="true"><use href="#icon-music" /></svg>
+                <span class="nav-label">音频文件</span>
+              </a>
+              <a href="#search" data-nav="search" aria-label="歌曲检索" title="歌曲检索">
+                <svg class="icon" aria-hidden="true"><use href="#icon-search" /></svg>
+                <span class="nav-label">歌曲检索</span>
+              </a>
+              <a href="#rankings" data-nav="rankings" aria-label="排行榜" title="排行榜">
+                <svg class="icon" aria-hidden="true"><use href="#icon-list" /></svg>
+                <span class="nav-label">排行榜</span>
+              </a>
+            </div>
+            <div class="navigation-group navigation-management" role="group" aria-label="管理">
+              <a href="#cloud115" data-nav="cloud115" aria-label="115 与 STRM" title="115 与 STRM">
+                <svg class="icon" aria-hidden="true"><use href="#icon-cloud" /></svg>
+                <span class="nav-label">115 与 STRM</span>
+              </a>
+              <a href="#history" data-nav="history" aria-label="运行记录" title="运行记录">
+                <svg class="icon" aria-hidden="true"><use href="#icon-clock" /></svg>
+                <span class="nav-label">运行记录</span>
+              </a>
+              <a href="#settings" data-nav="settings" aria-label="系统设置" title="系统设置">
+                <svg class="icon" aria-hidden="true"><use href="#icon-settings" /></svg>
+                <span class="nav-label">系统设置</span>
+              </a>
+            </div>
           </nav>
           <div class="sidebar-footer">
-            <div class="sidebar-status">
-            <span id="connection-state" class="connection-state"
-              ><span class="connection-dot"></span
-              ><span id="connection-label">正在连接</span></span
-            ><button
-              id="refresh-button"
-              class="icon-button"
-              type="button"
-              aria-label="刷新控制台"
-              title="刷新控制台"
-            >
-              <svg class="icon" aria-hidden="true">
-                <use href="#icon-refresh" />
-              </svg>
+            <button id="refresh-button" class="sidebar-connection" type="button" aria-label="刷新控制台" aria-describedby="connection-label" title="点击刷新控制台">
+              <span id="connection-state" class="connection-state">
+                <span class="connection-dot" aria-hidden="true"></span>
+                <span id="connection-label">连接中</span>
+              </span>
             </button>
-            <span id="breadcrumb-current" class="sr-only">任务概览</span>
-            </div>
-            <button id="theme-toggle" class="button sidebar-action" type="button" aria-label="当前主题：跟随系统；点击切换为浅色" title="当前主题：跟随系统；点击切换为浅色">
+            <button id="theme-toggle" class="icon-button sidebar-tool" type="button" aria-label="当前主题：跟随系统；点击切换为浅色" title="当前主题：跟随系统；点击切换为浅色">
               <svg class="icon" aria-hidden="true"><use id="theme-icon" href="#icon-monitor" /></svg>
-              <span id="theme-label" class="nav-label">主题：跟随系统</span>
             </button>
-            <button id="logout-button" class="button sidebar-action" type="button" aria-label="退出登录" title="退出登录">
+            <button id="logout-button" class="icon-button sidebar-tool" type="button" aria-label="退出登录" title="退出登录">
               <svg class="icon" aria-hidden="true"><use href="#icon-logout" /></svg>
-              <span class="nav-label">退出登录</span>
             </button>
           </div>
         </aside>
