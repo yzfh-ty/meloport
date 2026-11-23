@@ -110,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const $ = (id) => document.getElementById(id);
   const platforms = { netease: '网易云音乐', qq: 'QQ 音乐', kugou: '酷狗音乐' };
-  const titles = { overview: '任务概览', audio: '音频文件', cloud115: '115 与 STRM', search: '歌曲检索', rankings: '排行榜', history: '运行记录', settings: '系统设置' };
+  const titles = { overview: '任务概览', audio: '音频文件', cloud115: '115 与 STRM', navidrome: 'Navidrome', search: '歌曲检索', rankings: '排行榜', history: '运行记录', settings: '系统设置' };
   const qualities = {
     netease: [['lossless', '无损 · lossless'], ['hires', 'Hi-Res · hires'], ['exhigh', '高品质 · exhigh'], ['standard', '标准 · standard'], ['jymaster', '母带 · jymaster'], ['jyeffect', '沉浸环绕 · jyeffect'], ['sky', '沉浸声 · sky']],
     qq: [['flac', '无损 · flac'], ['hires', 'Hi-Res · hires'], ['320k', '320 kbps · 320k'], ['128k', '128 kbps · 128k'], ['master', '母带 · master']],
@@ -137,6 +137,7 @@ document.addEventListener('DOMContentLoaded', () => {
     rankings: { platform: 'netease', catalog: {}, loading: false, error: '', filter: '', category: '', controller: null },
     audio: { filters: {}, offsets: [0], nextOffset: null, items: [], loading: false, error: '', controller: null, repairing: null },
     cloud: { data: null, dirty: false, page: 0, controller: null, operation: '', login: null },
+    navidrome: { dirty: false },
     schedules: {}
   };
 
@@ -1373,23 +1374,36 @@ document.addEventListener('DOMContentLoaded', () => {
     text('cloud-settings-note', dirty ? '有未保存的更改。' : '设置保存后，在下次启动时生效。');
     for (const key of ['pending', 'confirmed', 'exported']) text(`cloud-${key}`, number(data.stats?.[key]));
     renderCloudFiles();
+    renderNavidrome();
   }
 
   function renderCloudOptions() {
     const cloudEnabled = $('cloud-enabled').checked;
-    const mediaEnabled = $('cloud-media-enabled').checked;
-    const navidromeEnabled = $('cloud-navidrome-enabled').checked;
     $('cloud-storage-fields').disabled = !cloudEnabled;
-    $('cloud-media-fields').disabled = !mediaEnabled && !cloudEnabled;
-    $('cloud-navidrome-fields').disabled = !navidromeEnabled;
     $('cloud-target-cid').required = cloudEnabled;
-    $('cloud-navidrome-url').required = navidromeEnabled;
-    $('cloud-navidrome-mount-root').required = navidromeEnabled;
-    const data = state.cloud.data;
-    text('cloud-navidrome-status', navidromeEnabled ? data?.navidrome_runtime_enabled ? '已启用' : '重启后启用' : '未启用');
-    text('cloud-media-runtime', data?.media_runtime_enabled
-      ? '媒体端口已启动。更改开关、端口或 Navidrome 接入后，需重启服务。'
-      : '媒体端口未启动。仅下载本地歌曲时无需开启；生成的 STRM 需开启媒体端口后才能播放。');
+  }
+
+  function renderNavidrome() {
+    const { data, operation } = state.cloud;
+    if (!data) return;
+    const navidromeEnabled = $('navidrome-enabled').checked;
+    const mediaEnabled = $('navidrome-media-enabled').checked;
+    $('navidrome-fields').disabled = operation === 'save';
+    $('navidrome-save').disabled = Boolean(operation) || !state.navidrome.dirty;
+    $('navidrome-integration-fields').disabled = !navidromeEnabled;
+    $('navidrome-media-fields').disabled = !mediaEnabled && !data.settings.enabled;
+    $('navidrome-url').required = navidromeEnabled;
+    $('navidrome-mount-root').required = navidromeEnabled;
+    const status = data.navidrome_runtime_enabled
+      ? data.settings.navidrome_enabled ? ['已启用', 'success'] : ['重启后关闭', 'warning']
+      : data.settings.navidrome_enabled ? ['重启后启用', 'warning'] : ['未启用', 'neutral'];
+    text('navidrome-runtime-status', status[0]);
+    $('navidrome-runtime-status').className = `status-badge status-${status[1]}`;
+    show('navidrome-restart', data.restart_required);
+    text('navidrome-settings-note', state.navidrome.dirty ? '有未保存的更改。' : '设置保存后，在下次启动时生效。');
+    text('navidrome-media-runtime', data.media_runtime_enabled
+      ? '媒体端口已启动。更改媒体入口或 Navidrome 接入后，需重启服务。'
+      : '媒体端口未启动。STRM 播放和 Navidrome 接入需开启后重启服务。');
   }
 
   function renderCloudFiles() {
@@ -1438,24 +1452,31 @@ document.addEventListener('DOMContentLoaded', () => {
     const controller = new AbortController();
     state.cloud.controller = controller;
     show('cloud-loading', !state.cloud.data);
+    show('navidrome-loading', !state.cloud.data);
     cloudFeedback('cloud-error', '');
+    cloudFeedback('navidrome-error', '');
     try {
       const data = await request(cloudPath, { timeout: 20000, signal: controller.signal });
       if (controller.signal.aborted) return;
       state.cloud.data = data;
-      if (!state.cloud.dirty) {
-        for (const input of $('cloud-fields').querySelectorAll('input[name]')) {
+      for (const [fields, dirty] of [['cloud-fields', state.cloud.dirty], ['navidrome-fields', state.navidrome.dirty]]) {
+        if (dirty) continue;
+        for (const input of $(fields).querySelectorAll('input[name]')) {
           if (input.type === 'checkbox') input.checked = Boolean(data.settings[input.name]);
           else input.value = data.settings[input.name] ?? '';
         }
       }
       renderCloud();
     } catch (error) {
-      if (!controller.signal.aborted) cloudFeedback('cloud-error', error.message);
+      if (!controller.signal.aborted) {
+        cloudFeedback('cloud-error', error.message);
+        cloudFeedback('navidrome-error', error.message);
+      }
     } finally {
       if (state.cloud.controller === controller) {
         state.cloud.controller = null;
         show('cloud-loading', false);
+        show('navidrome-loading', false);
       }
     }
   }
@@ -1471,52 +1492,70 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     } catch (error) {
       cloudFeedback(errorID, error.message);
-      if (errorID === 'cloud-settings-error') $(errorID).focus();
+      if (errorID.endsWith('-settings-error')) $(errorID).focus();
     } finally {
       state.cloud.operation = '';
       renderCloud();
     }
   }
 
-  function readCloudSettings(form) {
-    return Object.fromEntries(Array.from(form.querySelectorAll('input[name]'), (input) => [
+  function readCloudSettings(form, saved = {}) {
+    const fields = Object.fromEntries(Array.from(form.querySelectorAll('input[name]'), (input) => [
       input.name, input.type === 'checkbox' ? input.checked : input.value.trim()
     ]));
+    return { ...saved, ...fields };
   }
 
   function saveCloudSettings(event) {
     event.preventDefault();
-    const form = event.currentTarget;
-    const settings = readCloudSettings(form);
+    if (!state.cloud.data || state.cloud.operation) return;
+    const settings = readCloudSettings(event.currentTarget, state.cloud.data.settings);
     if (settings.enabled && !/^[1-9][0-9]{0,19}$/.test(settings.target_cid)) {
       cloudFeedback('cloud-settings-error', '启用 115 时，请填写非根目录的数字 CID。');
       $('cloud-target-cid').focus();
       return;
     }
-    if (settings.navidrome_enabled && !settings.media_enabled) {
-      $('cloud-media-enabled').closest('details').open = true;
-      cloudFeedback('cloud-settings-error', '接入 Navidrome 时，请同时开启独立媒体端口。');
-      $('cloud-media-enabled').focus();
-      return;
-    }
-    if (settings.navidrome_enabled && (!settings.navidrome_url || !settings.navidrome_mount_root)) {
-      const missing = $(settings.navidrome_url ? 'cloud-navidrome-mount-root' : 'cloud-navidrome-url');
-      missing.closest('details').open = true;
-      cloudFeedback('cloud-settings-error', '请同时填写 Navidrome 服务地址与挂载路径。');
-      missing.focus();
-      return;
-    }
-    if (settings.navidrome_enabled && settings.navidrome_playlist_sync && !settings.enabled) {
-      cloudFeedback('cloud-settings-error', '同步创建 Navidrome 榜单歌单时，请先开启 115 交接。');
+    if (!settings.enabled && settings.navidrome_enabled && settings.navidrome_playlist_sync) {
+      cloudFeedback('cloud-settings-error', '请先在「Navidrome」页面关闭榜单歌单同步，再关闭 115 交接。');
       $('cloud-enabled').focus();
       return;
     }
     cloudAction($('cloud-save'), 'save', '正在保存', async () => {
       const result = await request(`${cloudPath}/settings`, { method: 'PUT', body: settings });
+      state.cloud.data = { ...state.cloud.data, settings, restart_required: result.restart_required };
       state.cloud.dirty = false;
       await loadCloud();
-      toast(result.restart_required ? '设置已保存，重启服务后生效' : '接入设置已保存');
+      toast(result.restart_required ? '设置已保存，重启服务后生效' : '网盘交接设置已保存');
     }, 'cloud-settings-error');
+  }
+
+  function saveNavidromeSettings(event) {
+    event.preventDefault();
+    if (!state.cloud.data || state.cloud.operation) return;
+    const settings = readCloudSettings(event.currentTarget, state.cloud.data.settings);
+    if (settings.navidrome_enabled && !settings.media_enabled) {
+      cloudFeedback('navidrome-settings-error', '接入 Navidrome 时，请同时开启独立媒体端口。');
+      $('navidrome-media-enabled').focus();
+      return;
+    }
+    if (settings.navidrome_enabled && (!settings.navidrome_url || !settings.navidrome_mount_root)) {
+      const missing = $(settings.navidrome_url ? 'navidrome-mount-root' : 'navidrome-url');
+      cloudFeedback('navidrome-settings-error', '请同时填写 Navidrome 服务地址与音乐目录。');
+      missing.focus();
+      return;
+    }
+    if (settings.navidrome_enabled && settings.navidrome_playlist_sync && !settings.enabled) {
+      cloudFeedback('navidrome-settings-error', '请先在「115 与 STRM」页面启用并保存网盘交接，再开启榜单歌单同步。');
+      $('navidrome-playlist-sync').focus();
+      return;
+    }
+    cloudAction($('navidrome-save'), 'save', '正在保存', async () => {
+      const result = await request(`${cloudPath}/settings`, { method: 'PUT', body: settings });
+      state.cloud.data = { ...state.cloud.data, settings, restart_required: result.restart_required };
+      state.navidrome.dirty = false;
+      await loadCloud();
+      toast(result.restart_required ? 'Navidrome 设置已保存，重启服务后生效' : 'Navidrome 设置已保存');
+    }, 'navidrome-settings-error');
   }
 
   function cloudSessionPath(id) {
@@ -1646,7 +1685,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (next === 'rankings') loadRankings(state.rankings.platform);
     if (previous === 'audio' && next !== 'audio' && state.audio.controller) state.audio.controller.abort();
     if (next === 'audio' && previous !== 'audio') loadAudio();
-    if (next === 'cloud115' && previous !== 'cloud115') loadCloud();
+    if (['cloud115', 'navidrome'].includes(next) && previous !== next) loadCloud();
   }
 
   $('refresh-button').addEventListener('click', async (event) => {
@@ -1674,7 +1713,10 @@ document.addEventListener('DOMContentLoaded', () => {
   $('settings-form').addEventListener('submit', saveSettings);
   $('cloud-settings').addEventListener('input', () => { state.cloud.dirty = true; renderCloud(); });
   $('cloud-settings').addEventListener('submit', saveCloudSettings);
+  $('navidrome-settings').addEventListener('input', () => { state.navidrome.dirty = true; renderNavidrome(); });
+  $('navidrome-settings').addEventListener('submit', saveNavidromeSettings);
   $('cloud-refresh').addEventListener('click', (event) => busyButton(event.currentTarget, '正在刷新', loadCloud));
+  $('navidrome-refresh').addEventListener('click', (event) => busyButton(event.currentTarget, '正在刷新', loadCloud));
   $('cloud-setup-link').addEventListener('click', (event) => {
     event.preventDefault();
     $('cloud-settings-title').focus();

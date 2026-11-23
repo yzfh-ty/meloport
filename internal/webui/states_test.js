@@ -29,6 +29,68 @@ test('disabled integrations preserve their addresses while saving explicit off s
   assert.equal(settings.navidrome_mount_root, '/music');
 });
 
+test('integration page saves preserve the other page and do not submit its draft', () => {
+  const saved = {
+    enabled: true, target_cid: '12345', staging_dir: 'staging', strm_dir: 'strm',
+    media_enabled: true, media_base_url: 'https://media.example.com',
+    navidrome_enabled: true, navidrome_url: 'http://127.0.0.1:4533',
+    navidrome_mount_root: '/music', navidrome_playlist_sync: false,
+  };
+  const cloudInputs = [
+    { name: 'enabled', type: 'checkbox', checked: true },
+    { name: 'target_cid', type: 'text', value: ' 67890 ' },
+    { name: 'staging_dir', type: 'text', value: 'staging-reviewed' },
+    { name: 'strm_dir', type: 'text', value: 'strm-reviewed' },
+  ];
+  const navidromeInputs = [
+    { name: 'navidrome_enabled', type: 'checkbox', checked: false },
+    { name: 'navidrome_url', type: 'url', value: ' http://127.0.0.1:4534 ', disabled: true },
+    { name: 'navidrome_mount_root', type: 'text', value: '/music-reviewed', disabled: true },
+    { name: 'navidrome_playlist_sync', type: 'checkbox', checked: false },
+    { name: 'media_enabled', type: 'checkbox', checked: true },
+    { name: 'media_base_url', type: 'url', value: ' https://media.example.com/new ' },
+  ];
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(source.slice(source.indexOf('  function readCloudSettings('), source.indexOf('  function saveCloudSettings(')) + '\nthis.read = readCloudSettings;', context);
+  const cloudSaved = context.read({ querySelectorAll: () => cloudInputs }, saved);
+  assert.equal(cloudSaved.target_cid, '67890');
+  assert.equal(cloudSaved.navidrome_enabled, true);
+  assert.equal(cloudSaved.navidrome_url, saved.navidrome_url);
+  assert.equal(cloudSaved.media_base_url, saved.media_base_url);
+  const navidromeSaved = context.read({ querySelectorAll: () => navidromeInputs }, cloudSaved);
+  assert.equal(navidromeSaved.target_cid, '67890');
+  assert.equal(navidromeSaved.staging_dir, 'staging-reviewed');
+  assert.equal(navidromeSaved.strm_dir, 'strm-reviewed');
+  assert.equal(navidromeSaved.navidrome_enabled, false);
+  assert.equal(navidromeSaved.navidrome_url, 'http://127.0.0.1:4534');
+  assert.equal(navidromeSaved.media_base_url, 'https://media.example.com/new');
+  assert.equal(saved.target_cid, '12345');
+  assert.equal(saved.navidrome_enabled, true);
+});
+
+test('refreshing integration settings preserves each unsaved page independently', async () => {
+  const cloudInput = { name: 'target_cid', type: 'text', value: 'cloud-draft' };
+  const navidromeInput = { name: 'navidrome_url', type: 'url', value: 'navidrome-draft' };
+  const state = { cloud: { data: null, dirty: true, controller: null }, navidrome: { dirty: false } };
+  const context = {
+    state, AbortController, cloudPath: '/api/cloud115', show() {}, cloudFeedback() {}, renderCloud() {},
+    $: id => ({ querySelectorAll: () => id === 'cloud-fields' ? [cloudInput] : [navidromeInput] }),
+    request: async () => ({ settings: { target_cid: 'saved-cid', navidrome_url: 'saved-navidrome-url' } }),
+  };
+  vm.createContext(context);
+  vm.runInContext(source.slice(source.indexOf('  async function loadCloud('), source.indexOf('  async function cloudAction(')) + '\nthis.load = loadCloud;', context);
+  await context.load();
+  assert.equal(cloudInput.value, 'cloud-draft');
+  assert.equal(navidromeInput.value, 'saved-navidrome-url');
+  state.cloud.dirty = false;
+  state.navidrome.dirty = true;
+  navidromeInput.value = 'navidrome-draft';
+  await context.load();
+  assert.equal(cloudInput.value, 'saved-cid');
+  assert.equal(navidromeInput.value, 'navidrome-draft');
+});
+
 test('search loading, failure and cancellation describe the current request', async () => {
   for (const name of ['Error', 'AbortError']) {
     const nodes = new Map();

@@ -320,7 +320,7 @@ fieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
 .form-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; padding-top: 17px; border-top: 1px solid var(--line); }
 
 /* 115 authorization and STRM export */
-.cloud-notice, #cloud-loading { margin-bottom: 16px; }
+.cloud-notice, #cloud-loading, #navidrome-loading { margin-bottom: 16px; }
 .cloud-account .panel-heading, .cloud-export .panel-heading { flex-wrap: wrap; }
 .cloud-account .panel-heading > div:first-child, .cloud-export .panel-heading > div:first-child { flex: 1 1 18rem; }
 .cloud-account .panel-heading h2 { flex-wrap: wrap; }
@@ -352,11 +352,11 @@ fieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
   padding: 12px var(--panel-pad);
   border-top: 1px solid var(--line);
 }
-.cloud-form { padding-top: 0; }
+.integration-form { padding-top: 0; }
 .cloud-enable { margin-bottom: 16px; }
-.cloud-advanced { margin-top: 14px; }
-.cloud-advanced > .field-hint { margin: 0 0 12px; }
-.cloud-form .form-error-summary { margin-top: 16px; }
+.integration-section { margin-top: 24px; }
+.integration-section > h3 { margin-bottom: 12px; }
+.integration-form .form-error-summary { margin-top: 16px; }
 .cloud-login-body { display: grid; justify-items: center; gap: 14px; text-align: center; }
 .cloud-login-body > p { max-width: 28rem; }
 .cloud-qr-frame {

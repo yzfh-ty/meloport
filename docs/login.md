@@ -44,4 +44,4 @@ server:
 
 连续 5 次凭据错误后，会暂停登录尝试 30 秒。密码与会话均不写入 SQLite，管理接口不会返回密码；网页编辑其他设置时会保留本地 YAML 中已有的密码字段。浏览器通过 HttpOnly、SameSite=Strict 的 Cookie 保存会话标识；不会把密码或令牌写入 localStorage。
 
-管理监听仍只允许本机 loopback 访问，并保留同源写入保护。登录不会改动 CLI 同步、定时任务、`/healthz`、`/readyz`，也不替代播放器的鉴权。独立媒体端口默认关闭；在「播放器与 Navidrome」手动开启并重启后，STRM 播放地址与 Subsonic 原生认证走该端口，监听地址通过 `MELOPORT_MEDIA_LISTEN` 配置，默认 `127.0.0.1:8081`。
+管理监听仍只允许本机 loopback 访问，并保留同源写入保护。登录不会改动 CLI 同步、定时任务、`/healthz`、`/readyz`，也不替代播放器的鉴权。独立媒体端口默认关闭；在独立的「Navidrome」菜单页的「媒体入口」手动开启并重启后，STRM 播放地址与 Subsonic 原生认证走该端口，监听地址通过 `MELOPORT_MEDIA_LISTEN` 配置，默认 `127.0.0.1:8081`。

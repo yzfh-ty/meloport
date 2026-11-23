@@ -10,22 +10,24 @@ Meloport 默认只把订阅歌曲下载到本地并补齐音频标签。115 交�
 2. 在 Meloport 控制台打开「115 与 STRM」→「配置 115 网盘」。勾选启用，填入目录 ID，确认下表中的路径与地址，然后保存并重启 Meloport。
 3. 在 CD2 配置单向上传，监控 `staging_dir`，将该目录的**内容**上传到选定的 115 目录。保留平台和歌单子目录，使远端布局为 `<目标目录>/<平台>/<歌单名--任务ID>/<音频文件>`。旧的 `<任务ID>/<音频文件>` 记录仍可核对和修复。如需释放暂存空间，让 CD2 在确认上传成功后清理源文件。
 
-| 网页设置 | YAML 字段 | 默认值与用途 |
-| --- | --- | --- |
-| 115 网盘交接与 STRM | `enabled` | `false`，关闭时保留本地下载流程 |
-| 独立媒体端口 | `media_enabled` | `false`，关闭时不监听媒体端口 |
-| Navidrome 接入 | `navidrome_enabled` | `false`，仅填写地址不会启用反代 |
-| Navidrome 榜单歌单同步 | `navidrome_playlist_sync` | `false`，开启时需同时启用 115 和 Navidrome |
-| 115 目标目录 ID | `target_cid` | 必填，CD2 的远端上传目标 |
-| CD2 暂存目录 | `staging_dir` | `data/115-staging`，与下载根目录、任务工作目录位于同一文件系统，供 CD2 监控 |
-| STRM 导出目录 | `strm_dir` | `data/strm`，供支持音频 STRM 的播放器读取 |
-| 播放器访问地址 | `media_base_url` | `http://127.0.0.1:8081`，写入 STRM。跨设备使用播放器能访问的 HTTPS 地址 |
-| Navidrome 服务地址 | `navidrome_url` | 启用 Navidrome 时必填 |
-| Navidrome 中的音乐目录 | `navidrome_mount_root` | Navidrome 运行环境看到的音乐目录绝对路径 |
+| 菜单页面 | 网页设置 | YAML 字段 | 默认值与用途 |
+| --- | --- | --- | --- |
+| 115 与 STRM | 115 网盘交接与 STRM | `enabled` | `false`，关闭时保留本地下载流程 |
+| 115 与 STRM | 115 目标目录 ID | `target_cid` | 必填，CD2 的远端上传目标 |
+| 115 与 STRM | CD2 暂存目录 | `staging_dir` | `data/115-staging`，与下载根目录、任务工作目录位于同一文件系统，供 CD2 监控 |
+| 115 与 STRM | STRM 导出目录 | `strm_dir` | `data/strm`，供支持音频 STRM 的播放器读取 |
+| Navidrome | Navidrome 接入 | `navidrome_enabled` | `false`，仅填写地址不会启用反代 |
+| Navidrome | Navidrome 服务地址 | `navidrome_url` | 启用 Navidrome 时必填 |
+| Navidrome | Navidrome 中的音乐目录 | `navidrome_mount_root` | Navidrome 运行环境看到的音乐目录绝对路径 |
+| Navidrome | Navidrome 榜单歌单同步 | `navidrome_playlist_sync` | `false`，开启时需同时启用 115 和 Navidrome |
+| Navidrome | 独立媒体端口 | `media_enabled` | `false`，STRM 和 Navidrome 共用的播放入口 |
+| Navidrome | 播放器访问地址 | `media_base_url` | `http://127.0.0.1:8081`，写入 STRM。跨设备使用播放器能访问的 HTTPS 地址 |
 
 本地相对路径从配置文件所在目录解析。暂存目录、STRM 目录、下载工作目录和数据库应当各自独立。Meloport 从工作目录向 CD2 暂存目录原子移动完整音频，因此需要同卷路径。YAML 配置字段和默认值见 [配置示例](../config.example.yaml)。
 
 只启用 115 交接不会启动媒体监听，也不会接入 Navidrome。只启用 Navidrome 不会开启 CD2 交接，订阅歌曲继续下载到本地。各开关及监听地址修改后均需重启服务生效。
+
+「115 与 STRM」和「Navidrome」各自保存当前页的设置，切换菜单会保留未保存的草稿。保存一页不会同时提交另一页的草稿。已启用 Navidrome 榜单歌单同步时，需先在 Navidrome 页关闭该同步，再关闭 115 交接。
 
 ## 2. 扫码登录并检查连接
 
@@ -52,13 +54,13 @@ Meloport 默认只把订阅歌曲下载到本地并补齐音频标签。115 交�
 
 ## 4. 配置播放器
 
-**支持音频 STRM 的播放器**读取导出文件中的稳定媒体地址。使用前，在「播放器与 Navidrome」开启「独立媒体端口」，填写播放器访问地址 `media_base_url`，保存并重启。媒体默认监听 `127.0.0.1:8081`，需要更换时通过 `MELOPORT_MEDIA_LISTEN` 配置；直接访问时，播放器地址中的端口应与监听端口一致。跨设备访问时，填写播放器能访问的 HTTPS 反代地址，并将反代上游指向配置的媒体监听地址。只播放 STRM 不需要开启 Navidrome 接入。
+**支持音频 STRM 的播放器**读取导出文件中的稳定媒体地址。使用前，在独立的「Navidrome」菜单页的「媒体入口」开启「独立媒体端口」，填写播放器访问地址 `media_base_url`，保存并重启。也可从「115 与 STRM」的「配置媒体入口」链接进入。媒体默认监听 `127.0.0.1:8081`，需要更换时通过 `MELOPORT_MEDIA_LISTEN` 配置；直接访问时，播放器地址中的端口应与监听端口一致。跨设备访问时，填写播放器能访问的 HTTPS 反代地址，并将反代上游指向配置的媒体监听地址。只播放 STRM 不需要开启 Navidrome 接入。
 
 播放器请求该地址时，Meloport 按请求的 User-Agent 获取 115 临时直链并返回 HTTP `302`。反代应保留 User-Agent，并将 302 返回给播放器。如果配置了地址路径前缀，反代应去掉前缀后再转发。持有 STRM 链接即可请求对应音频，请保护导出目录，并在反代访问日志中隐藏媒体路径。关闭独立媒体端口后，已生成的 STRM 会保留，但需重新开启端口才能通过 Meloport 播放。
 
 **Navidrome** 可以单独接入本地下载模式，也可以搭配 115。Navidrome 扫描本地音乐目录，或 CD2 挂载的 **115 真实音频目录**，`.strm` 文件供支持该格式的其他播放器使用。
 
-1. 在「播放器与 Navidrome」分别开启「独立媒体端口」和「Navidrome 接入」。填写播放器地址、`navidrome_url`，以及 Navidrome 运行环境看到的音乐目录绝对路径 `navidrome_mount_root`。保存后重启。
+1. 打开侧边栏的「Navidrome」菜单，分别开启「Navidrome 接入」和「独立媒体端口」。填写播放器地址、`navidrome_url`，以及 Navidrome 运行环境看到的音乐目录绝对路径 `navidrome_mount_root`。保存后重启。
 2. 将 Subsonic 客户端连接到 Meloport 媒体地址，使用 Navidrome 的账号和原生认证。本地模式的音频请求由 Navidrome 处理；无需开启 115，也不会将本地音频移入 CD2 目录。请勿将 Meloport 加入 Navidrome 的外部鉴权代理信任列表。
 3. 如果需要 115 的 302 直链播放，另行启用 115 交接、完成远端核对，并让 Navidrome 扫描 CD2 挂载的真实音频。在对应播放器设置中开启 **Report Real Path**，关闭服务端转码和码率限制。
 4. 如需自动创建榜单歌单，先在服务进程环境设置 `MELOPORT_NAVIDROME_USERNAME` 和 `MELOPORT_NAVIDROME_PASSWORD`，再启用「同步创建 Navidrome 榜单歌单」，保存并重启。此功能默认关闭，需同时启用 115 和 Navidrome。远程服务必须使用 HTTPS，本机可用 HTTP。密码只从 Meloport 进程环境读取。Navidrome 扫描完所有文件后，后续榜单同步才会创建或更新歌单；普通订阅歌单不会发布。
