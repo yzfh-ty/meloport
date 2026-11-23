@@ -253,6 +253,21 @@ func (e *Engine) Run(ctx context.Context, task model.Task) (summary Summary, ret
 		if err != nil {
 			return summary, err
 		}
+		if !found || !(completeFile(stored, directory) || stored.TagPending && localFile(stored.Path, directory)) {
+			reused, available, err := e.reuseDownload(ctx, task, &track, providerName, directory, collection, stored)
+			if err != nil {
+				if ctx.Err() != nil {
+					return summary, ctx.Err()
+				}
+				summary.Failed++
+				summary.Pending--
+				addIssue(fmt.Sprintf("track %s local reuse: %v", track.ID, err))
+				continue
+			}
+			if available {
+				stored, found = reused, true
+			}
+		}
 		if found && (completeFile(stored, directory) || stored.TagPending && localFile(stored.Path, directory)) {
 			fillStoredMetadata(&track, storedTrack(stored))
 			_, warning, err := e.tagExisting(ctx, stored, track, false)

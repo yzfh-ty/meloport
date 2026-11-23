@@ -126,3 +126,26 @@ func TestInvalidRecordsAndCanceledQueries(t *testing.T) {
 		t.Fatal("ignored canceled database context")
 	}
 }
+
+func TestSharedDownloadLookupUsesNativeNamespaceAndSkipsPendingTags(t *testing.T) {
+	store, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	for _, item := range []state.Download{
+		{TaskID: "removed-subscription", Provider: "netease", TrackID: "1", Path: "old.flac", Size: 10},
+		{TaskID: "new-subscription", Provider: "netease", TrackID: "1", Path: "new.flac", Size: 10},
+		{TaskID: "unfinished", Provider: "netease", TrackID: "1", Path: "pending.flac", Size: 10, TagPending: true},
+		{TaskID: "other-platform", Provider: "qq", TrackID: "1", Path: "qq.flac", Size: 10},
+		{TaskID: "other-song", Provider: "netease", TrackID: "2", Path: "other.flac", Size: 10},
+	} {
+		if err := store.SaveDownload(t.Context(), item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, err := store.FindDownloads(t.Context(), "netease", "1")
+	if err != nil || len(items) != 2 || items[0].TaskID != "new-subscription" || items[1].TaskID != "removed-subscription" {
+		t.Fatalf("shared lookup mixed IDs/platforms or lost retained records: %+v, %v", items, err)
+	}
+}

@@ -275,7 +275,7 @@
                 >
                   <svg class="icon" aria-hidden="true">
                     <use href="#icon-plus" /></svg
-                  >新建任务
+                  >添加订阅
                 </button>
               </div>
             </div>
@@ -382,7 +382,7 @@
                   type="button"
                 >
                   <svg class="icon" aria-hidden="true"><use href="#icon-plus" /></svg>
-                  创建首个任务
+                  添加首个订阅
                 </button>
               </div>
               <div id="tasks-no-match" class="empty-state compact" hidden>
@@ -1094,7 +1094,7 @@
     <dialog id="task-dialog" class="modal" aria-labelledby="task-dialog-title">
       <form id="task-form" novalidate>
         <div class="modal-header">
-          <h2 id="task-dialog-title">新建订阅任务</h2>
+          <h2 id="task-dialog-title">添加订阅</h2>
           <button
             class="icon-button"
             type="button"
@@ -1166,6 +1166,7 @@
               <p id="task-playlist-hint" class="field-hint">
                 支持网易云完整歌单链接或歌单 ID。
               </p>
+              <p class="field-hint">下载前会匹配已登记的本地歌曲，同一平台、同一版本的完整音频可跨订阅复用。</p>
             </div>
             <div id="task-ranking-field" class="field" hidden>
               <label for="task-source-id">排行榜 ID <span class="required-mark">*</span></label>
@@ -1221,7 +1222,7 @@
                   hidden
                 ></span>
                 <p class="field-hint">
-                  相对目录随下载根目录变化；绝对目录保持固定。保持目录稳定，便于复用下载记录。
+                  相对目录随下载根目录变化；绝对目录保持固定。其他订阅已下载的同一首歌会从本地复制到此目录。
                 </p>
               </div>
             </details>
@@ -1233,7 +1234,7 @@
                 checked
               /><span
                 ><strong>启用自动同步</strong
-                ><small>按计划运行；保存任务本身不会立刻开始下载。</small></span
+                ><small id="task-enabled-hint">添加后立即下载缺少的歌曲，后续按计划同步。</small></span
               ></label
             >
           </fieldset>
@@ -1246,7 +1247,7 @@
           >
             取消</button
           ><button id="task-submit" class="button button-primary" type="submit">
-            创建任务
+            添加并开始下载
           </button>
         </div>
       </form>

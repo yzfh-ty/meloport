@@ -626,10 +626,24 @@ document.addEventListener('DOMContentLoaded', () => {
     $('task-form').querySelector('.advanced-fields').open = Boolean(task && (task.schedule || task.quality || task.directory));
     renderTaskQuality($('task-platform').value, task ? task.quality || '' : '');
     renderTaskSource();
-    text('task-dialog-title', task ? '编辑订阅任务' : '新建订阅任务');
-    text('task-submit', task ? '保存修改' : '创建任务');
+    text('task-dialog-title', task ? '编辑订阅任务' : '添加订阅');
+    updateTaskSubmit();
     openDialog('task-dialog', trigger);
     (task ? (sourceType === 'ranking' ? $('task-source-id') : $('task-playlist')) : preset ? $('task-id') : $('task-id')).focus();
+  }
+
+  function updateTaskSubmit() {
+    const enabled = $('task-enabled').checked;
+    text('task-submit', state.editTask ? '保存修改' : enabled ? '添加并开始下载' : '添加订阅');
+    text('task-enabled-hint', !enabled ? '暂时只保存订阅，不自动下载。' : state.editTask ? '后续按计划同步；保存修改不会立即下载。' : '添加后立即下载缺少的歌曲，后续按计划同步。');
+  }
+
+  function taskSavedMessage(input, result, editing) {
+    if (editing) return `订阅 ${input.id} 已更新`;
+    if (result.queued) return `订阅 ${input.id} 已添加，首次下载已排队`;
+    if (!input.enabled) return `订阅 ${input.id} 已添加，自动同步未启用`;
+    if (result.queue_reason === 'paused') return `订阅 ${input.id} 已添加；下载队列暂停，恢复后可点击“同步”`;
+    return `订阅 ${input.id} 已添加；队列已满，可稍后点击“同步”`;
   }
 
   async function saveTask(event) {
@@ -661,11 +675,11 @@ document.addEventListener('DOMContentLoaded', () => {
         $('task-fields').disabled = true;
         $('task-dialog').setAttribute('aria-busy', 'true');
         const path = editing ? `/api/tasks/${encodeURIComponent(editing.id)}` : '/api/tasks';
-        await request(path, { method: editing ? 'PUT' : 'POST', body: input });
+        const result = await request(path, { method: editing ? 'PUT' : 'POST', body: input });
         $('task-dialog').removeAttribute('aria-busy');
         $('task-dialog').close();
         await refreshOverview({ force: true });
-        toast(editing ? `任务 ${input.id} 已更新` : `任务 ${input.id} 已创建`);
+        toast(taskSavedMessage(input, result, editing));
       });
     } catch (error) { formErrors('task', [{ message: error.message }]); }
     finally { $('task-fields').disabled = false; $('task-dialog').removeAttribute('aria-busy'); }
@@ -1691,6 +1705,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('add-task-button').addEventListener('click', (event) => openTask(null, event.currentTarget));
   $('empty-add-task-button').addEventListener('click', (event) => openTask(null, event.currentTarget));
+  $('task-enabled').addEventListener('change', updateTaskSubmit);
   $('task-filter').addEventListener('input', () => renderTasks());
   $('task-platform').addEventListener('change', () => { renderTaskQuality($('task-platform').value); renderTaskSource(); });
   $('task-source-type').addEventListener('change', renderTaskSource);

@@ -5,6 +5,30 @@ const test = require('node:test');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, 'assets/app.js'), 'utf8');
 
+test('subscription creation messages distinguish downloads queued from subscriptions only saved', () => {
+  const nodes = { 'task-enabled': { checked: true }, 'task-submit': {}, 'task-enabled-hint': {} };
+  const context = { state: { editTask: null }, $: id => nodes[id], text: (id, value) => { nodes[id].textContent = value; } };
+  vm.createContext(context);
+  vm.runInContext(source.slice(source.indexOf('  function updateTaskSubmit('), source.indexOf('  async function saveTask(')) + '\nthis.update = updateTaskSubmit; this.message = taskSavedMessage;', context);
+  context.update();
+  assert.equal(nodes['task-submit'].textContent, '添加并开始下载');
+  assert.match(nodes['task-enabled-hint'].textContent, /立即下载/);
+  assert.match(context.message({ id: 'manual', enabled: true }, { queued: true }, null), /首次下载已排队/);
+  assert.match(context.message({ id: 'manual', enabled: true }, { queued: false, queue_reason: 'paused' }, null), /队列暂停/);
+  assert.match(context.message({ id: 'manual', enabled: true }, { queued: false, queue_reason: 'full' }, null), /队列已满/);
+  nodes['task-enabled'].checked = false;
+  context.update();
+  assert.equal(nodes['task-submit'].textContent, '添加订阅');
+  assert.match(nodes['task-enabled-hint'].textContent, /只保存订阅/);
+  assert.match(context.message({ id: 'manual', enabled: false }, { queued: false }, null), /自动同步未启用/);
+  nodes['task-enabled'].checked = true;
+  context.state.editTask = { id: 'manual' };
+  context.update();
+  assert.equal(nodes['task-submit'].textContent, '保存修改');
+  assert.match(nodes['task-enabled-hint'].textContent, /不会立即下载/);
+  assert.equal(context.message({ id: 'manual' }, { saved: true }, context.state.editTask), '订阅 manual 已更新');
+});
+
 test('disabled integrations preserve their addresses while saving explicit off switches', () => {
   const inputs = [
     { name: 'enabled', type: 'checkbox', checked: false },

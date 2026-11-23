@@ -143,6 +143,24 @@ func TestNativeQQPlaylistUsesMeteredAPIOnlyForMissingAudio(t *testing.T) {
 		}
 		assertTaggedFLAC(t, payload, record, map[string][]string{taglib.Title: {title}, taglib.Artist: {"Artist"}, taglib.Album: {"Album"}})
 	}
+	// A new subscription to the same native songs must work with no ChKSz key,
+	// using real tagged local files and separate destination records.
+	t.Setenv(keyEnv, "")
+	manager = newManager()
+	engine = syncer.NewWithSources(manager, manager, dl, store)
+	next := task
+	next.ID, next.Directory = "qq-second", filepath.Join(directory, "second")
+	fourth, err := engine.Run(t.Context(), next)
+	if err != nil || fourth.Skipped != 2 || fourth.Downloaded != 0 || resolveCalls.Load() != 3 || audioCalls.Load() != 3 {
+		t.Fatalf("native cross-subscription reuse without key: %+v, %v", fourth, err)
+	}
+	for mid, title := range map[string]string{"003FirstMID": "One", "003SecondMID": "Two"} {
+		record, found, err := store.GetDownload(t.Context(), next.ID, "qq", mid)
+		if err != nil || !found || record.Path != filepath.Join(next.Directory, "qq-"+mid+".flac") {
+			t.Fatalf("new native subscription record: %+v, %v", record, err)
+		}
+		assertTaggedFLAC(t, payload, record, map[string][]string{taglib.Title: {title}, taglib.Artist: {"Artist"}, taglib.Album: {"Album"}})
+	}
 }
 
 type nativeFixtureSource struct{ list model.Playlist }
@@ -275,6 +293,11 @@ func TestNativeSyncKeepsPlatformIdentitiesSeparateAndSkipsWithoutKey(t *testing.
 		result, err := engine.Run(context.Background(), task)
 		if err != nil || result.Skipped != 1 || result.Downloaded != 0 || result.Status != "success" {
 			t.Fatalf("keyless cached %s sync: %+v %v", source, result, err)
+		}
+		task.ID, task.Directory = "second-task", filepath.Join(directory, "second")
+		result, err = engine.Run(t.Context(), task)
+		if err != nil || result.Skipped != 1 || result.Downloaded != 0 || result.Status != "success" {
+			t.Fatalf("keyless cross-subscription %s sync: %+v %v", source, result, err)
 		}
 	}
 	if resolveCalls.Load() != 3 || kgSearchCalls.Load() != 1 || metadataAPICalls.Load() != 0 || audioCalls.Load() != 3 {

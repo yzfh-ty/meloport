@@ -18,7 +18,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 4
+const schemaVersion = 5
 
 type Store struct {
 	db *sql.DB
@@ -202,6 +202,16 @@ func (s *Store) migrate(ctx context.Context) error {
 			return fmt.Errorf("record chart folder migration: %w", err)
 		}
 	}
+	if version < 5 {
+		for _, statement := range []string{
+			`CREATE INDEX IF NOT EXISTS downloads_provider_track ON downloads(provider, track_id, updated_at DESC)`,
+			`PRAGMA user_version = 5`,
+		} {
+			if _, err := tx.ExecContext(ctx, statement); err != nil {
+				return fmt.Errorf("migrate shared download lookup: %w", err)
+			}
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit database migration: %w", err)
 	}
@@ -257,6 +267,30 @@ func (s *Store) GetDownload(ctx context.Context, taskID, provider, trackID strin
 		return Download{}, false, err
 	}
 	return item, true, nil
+}
+
+// FindDownloads looks up the same native song across all subscriptions,
+// including subscriptions that were deleted. Callers must verify the files
+// and version metadata before using a record as a local audio source.
+func (s *Store) FindDownloads(ctx context.Context, provider, trackID string) ([]Download, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+downloadColumns+` FROM downloads
+		WHERE provider = ? AND track_id = ? AND tag_pending = 0 ORDER BY updated_at DESC, task_id`, provider, trackID)
+	if err != nil {
+		return nil, fmt.Errorf("find existing song downloads: %w", err)
+	}
+	defer rows.Close()
+	var items []Download
+	for rows.Next() {
+		item, err := scanDownload(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate existing song downloads: %w", err)
+	}
+	return items, nil
 }
 
 func (s *Store) SaveDownload(ctx context.Context, item Download) error {

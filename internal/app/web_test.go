@@ -522,6 +522,67 @@ func TestWebRunQueueCoalescesAndRejectsDisabledTasks(t *testing.T) {
 	}
 }
 
+func TestWebNewSubscriptionQueuesFirstSyncAndReportsDeferredDownloads(t *testing.T) {
+	for _, name := range []string{"enabled", "disabled", "paused", "full"} {
+		t.Run(name, func(t *testing.T) {
+			f := newWebFixture(t)
+			t.Setenv(webTestKeyEnv, "") // Only missing audio needs a key, not queueing.
+			task := webTask("manual", "qq")
+			task.Playlist = "https://y.qq.com/n/ryqq/playlist/456"
+			task.Directory = "manual-output"
+			switch name {
+			case "disabled":
+				task.Enabled = false
+			case "paused":
+				f.queue.mu.Lock()
+				f.queue.blocked = true
+				f.queue.mu.Unlock()
+			case "full":
+				f.queue.items = make(chan config.Task, 1)
+				f.queue.enqueue(config.Task{ID: "already-pending"})
+			}
+			w := webRequest(t, f, http.MethodPost, "/api/tasks", task)
+			webStatus(t, w, http.StatusCreated)
+			var result struct {
+				Saved       bool   `json:"saved"`
+				Queued      bool   `json:"queued"`
+				QueueReason string `json:"queue_reason"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if !result.Saved || result.Queued != (name == "enabled") || name != "enabled" && result.QueueReason != name || name == "enabled" && result.QueueReason != "" {
+				t.Fatalf("incorrect creation outcome for %s: %+v", name, result)
+			}
+			cfg, err := config.Load(f.path)
+			if err != nil || len(cfg.Tasks) != 1 || cfg.Tasks[0].PlaylistID != "456" || cfg.Tasks[0].Directory != filepath.Join(filepath.Dir(f.path), "data", "music", "manual-output") {
+				t.Fatalf("subscription was not persisted with effective rules: %+v, %v", cfg, err)
+			}
+			before := f.queue.snapshot()
+			webStatus(t, webRequest(t, f, http.MethodPost, "/api/tasks", task), http.StatusConflict)
+			// Editing a subscription saves rules without scheduling another first run.
+			webStatus(t, webRequest(t, f, http.MethodPut, "/api/tasks/manual", task), http.StatusOK)
+			after := f.queue.snapshot()
+			if len(before.Pending) != len(after.Pending) {
+				t.Fatal("duplicate creation or editing enqueued another first sync")
+			}
+			if name == "enabled" {
+				events := make(chan model.Task, 1)
+				cancel, done := startWebWorker(t, f, serviceRunnerFunc(func(ctx context.Context, task model.Task) (syncer.Summary, error) {
+					events <- task
+					return syncer.Summary{Status: "success"}, nil
+				}))
+				got := waitServiceEvent(t, events)
+				if got.ID != task.ID || got.SourceID != "456" || got.Platform != "qq" || got.Quality != "flac" || got.Directory != cfg.Tasks[0].Directory {
+					t.Fatalf("first sync used stale or unvalidated rules: %+v", got)
+				}
+				cancel()
+				waitServiceEvent(t, done)
+			}
+		})
+	}
+}
+
 func startWebWorker(t *testing.T, f *webFixture, engine runner) (context.CancelFunc, <-chan struct{}) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -656,9 +717,6 @@ func TestWebServeFromZeroTasksAcceptsRuntimeTaskAndReleasesPort(t *testing.T) {
 	}
 	if request("POST", "/api/tasks", webTask("runtime", "qq")) != 201 {
 		t.Fatal("runtime create failed")
-	}
-	if request("POST", "/api/tasks/runtime/run", map[string]any{}) != 202 {
-		t.Fatal("runtime run failed")
 	}
 	task := waitServiceEvent(t, executed)
 	if task.ID != "runtime" || task.Platform != "qq" || task.Quality != "flac" {

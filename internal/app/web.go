@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -386,7 +387,32 @@ func (c *webController) createTask(w http.ResponseWriter, r *http.Request) {
 		webError(w, 500, "configuration saved but schedule could not be applied; restart required")
 		return
 	}
-	webJSON(w, 201, map[string]bool{"saved": true})
+	result := struct {
+		Saved       bool   `json:"saved"`
+		Queued      bool   `json:"queued"`
+		QueueReason string `json:"queue_reason,omitempty"`
+	}{Saved: true, QueueReason: "disabled"}
+	for _, task := range cfg.Tasks {
+		if task.ID != input.ID || !task.IsEnabled() {
+			continue
+		}
+		result.Queued = c.queue.enqueue(task)
+		if !result.Queued {
+			queue := c.queue.snapshot()
+			// A schedule tick may already have enqueued the newly installed task.
+			result.Queued = slices.Contains(queue.Pending, task.ID) || slices.Contains(queue.Running, task.ID)
+			if queue.Paused {
+				result.QueueReason = "paused"
+			} else {
+				result.QueueReason = "full"
+			}
+		}
+		if result.Queued {
+			result.QueueReason = ""
+		}
+		break
+	}
+	webJSON(w, http.StatusCreated, result)
 }
 
 func (c *webController) updateTask(w http.ResponseWriter, r *http.Request) {

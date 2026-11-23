@@ -2,6 +2,7 @@ package syncer_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -67,7 +68,7 @@ func (d *fakeDownloader) Download(ctx context.Context, _ model.ResolvedTrack, di
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return model.DownloadResult{}, err
 	}
-	return model.DownloadResult{Path: path, Size: int64(len(data)), SHA256: "fixture-hash"}, nil
+	return model.DownloadResult{Path: path, Size: int64(len(data)), SHA256: fmt.Sprintf("%x", sha256.Sum256(data))}, nil
 }
 
 func setup(t *testing.T, p *fakeProvider) (*syncer.Engine, *state.Store, *fakeDownloader, model.Task) {
@@ -148,17 +149,17 @@ func TestMissingAndTruncatedFilesAreRepairedWithBackup(t *testing.T) {
 	}
 }
 
-func TestChangedOutputLeavesOldFileAndDownloadsToNewDirectory(t *testing.T) {
+func TestChangedOutputLeavesOldFileAndReusesAudioInNewDirectory(t *testing.T) {
 	ctx := context.Background()
 	p := &fakeProvider{playlist: playlist("1")}
-	engine, _, _, task := setup(t, p)
+	engine, _, downloader, task := setup(t, p)
 	if _, err := engine.Run(ctx, task); err != nil {
 		t.Fatal(err)
 	}
 	oldPath := filepath.Join(task.Directory, "netease-1.flac")
 	task.Directory = filepath.Join(filepath.Dir(task.Directory), "new-music")
 	result, err := engine.Run(ctx, task)
-	if err != nil || result.Downloaded != 1 {
+	if err != nil || result.Downloaded != 0 || result.Skipped != 1 || downloader.calls != 1 || len(p.resolved) != 1 {
 		t.Fatalf("new directory %+v err=%v", result, err)
 	}
 	if _, err := os.Stat(oldPath); err != nil {
