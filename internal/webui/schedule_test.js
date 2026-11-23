@@ -63,7 +63,7 @@ test('unsupported plans preserve the exact original expression without exposing 
     const model = decode(value);
     assert.equal(model.mode, 'custom', value);
     assert.equal(encode(model), value, value);
-    assert.equal(describe(value), '已有自定义计划，保持不变');
+    assert.equal(describe(value), '自定义计划');
     assert.ok(!describe(value).includes(value.trim()), value);
   }
 });

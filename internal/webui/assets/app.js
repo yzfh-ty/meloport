@@ -98,7 +98,7 @@ const scheduleUI = (() => {
     if (model.mode === 'hours') return `每 ${model.interval} 小时（整点）`;
     if (model.mode === 'minutes') return `每 ${model.interval} 分钟`;
     if (model.mode === 'inherit') return '继承默认计划';
-    return '已有自定义计划，保持不变';
+    return '自定义计划';
   }
 
   return { decode, encode, describe, hours, minutes };
@@ -586,7 +586,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function setupSchedule(prefix) {
     const select = $(`${prefix}-schedule`);
-    const options = [...(prefix === 'task' ? [['inherit', '继承默认计划']] : []), ['daily', '每天'], ['weekdays', '工作日（周一至周五）'], ['weekly', '每周'], ['hours', '每隔几小时'], ['minutes', '每隔几分钟'], ['custom', '已有自定义计划，保持不变']];
+    const options = [...(prefix === 'task' ? [['inherit', '继承默认计划']] : []), ['daily', '每天'], ['weekdays', '工作日（周一至周五）'], ['weekly', '每周'], ['hours', '每隔几小时'], ['minutes', '每隔几分钟'], ['custom', '保留自定义计划']];
     select.replaceChildren(...options.map(([value, label]) => { const option = element('option', '', label); option.value = value; return option; }));
     const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
     $(`${prefix}-schedule-weekday`).replaceChildren(...days.map((label, value) => { const option = element('option', '', label); option.value = String(value); return option; }));
