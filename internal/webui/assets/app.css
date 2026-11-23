@@ -96,8 +96,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline-offs
 .navigation .icon { width: 18px; height: 18px; }
 .count-badge { display: inline-grid; min-width: 22px; padding: 1px 5px; place-items: center; color: var(--muted); background: var(--surface-soft); border-radius: 6px; font-size: .75rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .sidebar-slot .sidebar { overflow-x: hidden; }
-.sidebar-collapsed .sidebar-slot .sidebar-head { justify-content: center; padding: 0; }
-.sidebar-collapsed .sidebar-slot :is(.brand, .nav-label) { display: none; }
+.sidebar-collapsed .sidebar-slot .sidebar-head { flex-direction: column; justify-content: flex-start; gap: 0; padding: 10px 0 0; }
+.sidebar-collapsed .sidebar-slot .brand { width: 44px; min-height: 44px; justify-content: center; gap: 0; }
+.sidebar-collapsed .sidebar-slot :is(.brand-name, .nav-label) { display: none; }
 .sidebar-collapsed .sidebar-slot .sidebar-toggle { margin: 0; }
 .sidebar-collapsed .sidebar-slot .navigation a { justify-content: center; padding-inline: 0; }
 .workspace { display: flex; min-width: 0; width: 100%; flex-direction: column; container-type: inline-size; }
