@@ -5,6 +5,65 @@ const test = require('node:test');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, 'assets/app.js'), 'utf8');
 
+function directoryFixture(request) {
+  const nodes = new Map();
+  const node = id => {
+    if (!nodes.has(id)) nodes.set(id, { value: '', replaceChildren() {} });
+    return nodes.get(id);
+  };
+  const context = {
+    state: { cloud: { picker: { trail: [], directories: [], offset: 0 }, dirty: false } },
+    $: node, AbortController, request, cloudPath: '/api/cloud115',
+    renderCloudDirectory() {}, renderCloud() {}, closeDialog() {}, toast() {},
+  };
+  vm.createContext(context);
+  vm.runInContext(source.slice(source.indexOf('  async function loadCloudDirectory('), source.indexOf('  function renderNavidrome(')) + '\nthis.load = loadCloudDirectory; this.cancel = cancelCloudDirectory; this.select = selectCloudDirectory;', context);
+  return context;
+}
+
+test('folder browsing ignores stale requests and cancellation does not restore private listings', async () => {
+  const pending = [];
+  const context = directoryFixture((url, options) => new Promise(resolve => pending.push({ url, options, resolve })));
+  const first = context.load([{ id: '0', name: '网盘' }]);
+  const second = context.load([{ id: '10', name: '音乐' }]);
+  assert.equal(pending[0].options.signal.aborted, true);
+  pending[0].resolve({ cid: '0', directories: [{ id: '11', name: '旧结果' }] });
+  await first;
+  assert.equal(context.state.cloud.picker.loading, true);
+  pending[1].resolve({ cid: '10', directories: [{ id: '12', name: '收藏' }], has_more: false });
+  await second;
+  assert.equal(context.state.cloud.picker.directories[0].name, '收藏');
+  const third = context.load([{ id: '12', name: '收藏' }]);
+  context.cancel();
+  assert.equal(pending[2].options.signal.aborted, true);
+  pending[2].resolve({ cid: '12', directories: [{ id: '13', name: '不能恢复' }] });
+  await third;
+  assert.equal(context.state.cloud.picker, null);
+});
+
+test('folder selection rejects root and failed reads, preserves drafts, and supports retry', async () => {
+  let fail = false;
+  const context = directoryFixture(async url => {
+    if (fail) throw new Error('请重新扫码');
+    return { cid: new URL(url, 'http://fixture').searchParams.get('cid'), directories: [], has_more: false };
+  });
+  context.$('cloud-target-cid').value = 'saved-target';
+  await context.load([{ id: '0', name: '网盘' }]);
+  context.select();
+  assert.equal(context.$('cloud-target-cid').value, 'saved-target');
+  fail = true;
+  await context.load([{ id: '10', name: '音乐' }]);
+  assert.equal(context.state.cloud.picker.error, '请重新扫码');
+  context.select();
+  assert.equal(context.$('cloud-target-cid').value, 'saved-target');
+  fail = false;
+  await context.load([{ id: '0', name: '网盘' }, { id: '10', name: '音乐' }]);
+  context.select();
+  assert.equal(context.$('cloud-target-cid').value, '10');
+  assert.equal(context.state.cloud.dirty, true);
+  assert.equal(context.state.cloud.directorySelection.path, '网盘 / 音乐');
+});
+
 test('settings hints omit resolved server directories while preserving editable values and drafts', () => {
   const privateDirectory = '/private/server-only/library';
   const nodes = new Map();

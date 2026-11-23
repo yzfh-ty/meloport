@@ -123,7 +123,7 @@ func TestSettingsKeepEditableDirectoriesAndReadableScheduleControls(t *testing.T
 		required []string
 		absent   []string
 	}{
-		{"/", []string{`id="settings-music-dir"`, `name="music_dir" type="text"`, `id="settings-music-dir-hint"`, `id="settings-schedule-time"`, `id="task-schedule-weekday"`, `id="task-schedule-interval"`}, []string{`settings-music-dir-resolved`, `当前实际目录`, `浏览目录`, `directory-dialog`, `webkitdirectory`, `type="file"`, `五字段`, `placeholder="0 3 * * *"`}},
+		{"/", []string{`id="settings-music-dir"`, `name="music_dir" type="text"`, `id="settings-music-dir-hint"`, `id="settings-schedule-time"`, `id="task-schedule-weekday"`, `id="task-schedule-interval"`}, []string{`settings-music-dir-resolved`, `当前实际目录`, `浏览目录`, `id="directory-dialog"`, `webkitdirectory`, `type="file"`, `五字段`, `placeholder="0 3 * * *"`}},
 		{"/assets/app.js", []string{`scheduleUI.describe`, `已有自定义计划，保持不变`, `music_dir:`, `readSchedule('settings')`, `readSchedule('task')`}, []string{`music_dir_resolved`, `/api/directories`, `loadDirectories`, `openDirectoryPicker`, `state.directories`, `validCron`}},
 	} {
 		response := httptest.NewRecorder()

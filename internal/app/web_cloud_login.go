@@ -18,6 +18,7 @@ import (
 
 	"meloport/internal/cloud115"
 )
+
 func encodeCloudLoginQR(value string) ([]byte, error) {
 	indexed, err := qrcode.Encode(value, qrcode.Medium, 256)
 	if err != nil {
@@ -100,7 +101,7 @@ func (l *cloudLogin) sessionFor(id string) *cloudLoginSession {
 }
 
 func (c *webController) cloudLoginBegin(w http.ResponseWriter, r *http.Request) {
-	if !c.cloudReady(w) {
+	if !c.cloudAuthReady(w) {
 		return
 	}
 	l := c.cloud.login
@@ -147,7 +148,7 @@ func (c *webController) cloudLoginBegin(w http.ResponseWriter, r *http.Request) 
 }
 
 func (c *webController) cloudLoginQR(w http.ResponseWriter, r *http.Request) {
-	if !c.cloudReady(w) {
+	if !c.cloudAuthReady(w) {
 		return
 	}
 	l := c.cloud.login
@@ -168,7 +169,7 @@ func (c *webController) cloudLoginQR(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *webController) cloudLoginStatus(w http.ResponseWriter, r *http.Request) {
-	if !c.cloudReady(w) {
+	if !c.cloudAuthReady(w) {
 		return
 	}
 	l := c.cloud.login
@@ -250,16 +251,17 @@ func (c *webController) completeCloudLogin(ctx context.Context, device cloud115.
 	if err != nil {
 		return nil, nil, time.Time{}, err
 	}
-	account, _, err := verifyCloudAccess(ctx, client, c.cloudBoot.TargetCID)
+	user, err := client.UserInfo(ctx)
 	if err != nil {
-		err = errors.New("115 login succeeded, but this account cannot read the configured target directory")
+		err = errors.New("115 login succeeded, but account information could not be read")
 		return nil, nil, time.Time{}, err
 	}
+	account := &cloudAccountView{ID: user.ID, Name: user.Name}
 	return client, account, expires, nil
 }
 
 func (c *webController) cloudLoginCancel(w http.ResponseWriter, r *http.Request) {
-	if !c.cloudReady(w) {
+	if !c.cloudAuthReady(w) {
 		return
 	}
 	l := c.cloud.login
@@ -273,7 +275,7 @@ func (c *webController) cloudLoginCancel(w http.ResponseWriter, r *http.Request)
 }
 
 func (c *webController) cloudLogout(w http.ResponseWriter, r *http.Request) {
-	if !c.cloudReady(w) {
+	if !c.cloudAuthReady(w) {
 		return
 	}
 	l := c.cloud.login

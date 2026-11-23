@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"image/png"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"meloport/internal/cloud115"
 	"meloport/internal/config"
@@ -31,7 +33,7 @@ func TestCloudWebSettingsRequireRestartAndProtectLiveStaging(t *testing.T) {
 	webStatus(t, webRequest(t, f, http.MethodGet, path, nil, func(r *http.Request) {
 		r.Header.Del("X-Meloport-Request")
 	}), http.StatusForbidden)
-	webStatus(t, webRequest(t, f, http.MethodPost, path+"/login", nil), http.StatusConflict)
+	webStatus(t, webRequest(t, f, http.MethodGet, path+"/directories", nil), http.StatusConflict)
 
 	settings := f.cfg.Cloud115.Settings()
 	settings.Enabled, settings.TargetCID = true, "12345"
@@ -105,7 +107,7 @@ func TestCloudWebMediaSwitchesPreserveLocalDownloadsAndRequireRestart(t *testing
 	if started.RuntimeEnabled || !started.MediaRuntimeEnabled || !started.NavidromeRuntimeEnabled || started.RestartRequired {
 		t.Fatal("standalone Navidrome runtime incorrectly enables 115 handoff")
 	}
-	webStatus(t, webRequest(t, f, http.MethodPost, "/api/cloud115/login", nil), http.StatusConflict)
+	webStatus(t, webRequest(t, f, http.MethodGet, "/api/cloud115/directories", nil), http.StatusConflict)
 	t.Setenv("MELOPORT_MEDIA_LISTEN", "127.0.0.1:18082")
 	putFixtureCloudSettings(t, f, settings)
 	settings.MediaEnabled, settings.NavidromeEnabled = false, false
@@ -234,6 +236,107 @@ func (f *webCloudDriveFixture) List(_ context.Context, cid string) ([]cloud115.F
 func (f *webCloudDriveFixture) DownURL(context.Context, string, string) (string, error) {
 	f.t.Error("unexpected direct link resolution")
 	return "", nil
+}
+
+type webCloudDirectoryFixture struct {
+	webCloudDriveFixture
+	calls int
+	err   error
+}
+
+func (f *webCloudDirectoryFixture) List(ctx context.Context, cid string) ([]cloud115.File, error) {
+	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if cid == "10" {
+		return []cloud115.File{}, nil
+	}
+	if cid != "0" {
+		f.t.Fatalf("unexpected picker directory %q", cid)
+	}
+	files := []cloud115.File{{ID: "777", Name: "private-audio.flac", PickCode: "private-pick-code", SHA1: strings.Repeat("a", 40)}}
+	for index := range 102 {
+		files = append(files, cloud115.File{ID: fmt.Sprint(index + 10), ParentID: "0", Name: fmt.Sprintf("文件夹 %03d", index), IsDir: true})
+	}
+	return files, nil
+}
+
+func TestCloudDirectoryPickerWorksBeforeHandoffIsConfigured(t *testing.T) {
+	f := newWebFixture(t)
+	cloud := f.control.cloud
+	if cloud == nil || cloud.sync != nil || cloud.handler != nil || cloud.login == nil {
+		t.Fatal("pre-configuration login must not enable handoff or a media listener")
+	}
+	drive := &webCloudDirectoryFixture{webCloudDriveFixture: webCloudDriveFixture{t}}
+	cloud.login.auth = &webCloudQRFixture{status: 2}
+	cloud.login.client = func(string) (cloudDriveClient, error) { return drive, nil }
+	path := "/api/cloud115"
+	webStatus(t, webRequest(t, f, http.MethodGet, path+"/directories", nil), http.StatusConflict)
+	webStatus(t, webRequest(t, f, http.MethodGet, path+"/directories", nil, func(r *http.Request) { r.Header.Del("X-Meloport-Request") }), http.StatusForbidden)
+	var session cloudLoginView
+	response := webRequest(t, f, http.MethodPost, path+"/login", nil)
+	webStatus(t, response, http.StatusOK)
+	if err := json.Unmarshal(response.Body.Bytes(), &session); err != nil {
+		t.Fatal(err)
+	}
+	response = webRequest(t, f, http.MethodGet, path+"/login?session_id="+session.SessionID, nil)
+	webStatus(t, response, http.StatusOK)
+	if !strings.Contains(response.Body.String(), `"status":"authorized"`) || drive.calls != 0 {
+		t.Fatal("QR authorization must not require a configured target or list the drive")
+	}
+	var overview cloudOverviewView
+	response = webRequest(t, f, http.MethodGet, path, nil)
+	if err := json.Unmarshal(response.Body.Bytes(), &overview); err != nil {
+		t.Fatal(err)
+	}
+	if !overview.LoginAvailable || !overview.SessionAuthenticated || overview.RuntimeEnabled || overview.Account == nil {
+		t.Fatal("logged-in account must be visible while handoff is disabled")
+	}
+	for _, query := range []string{"cid=../1", "cid=-1", "cid=01", "offset=-1", "offset=100001", "offset=x"} {
+		webStatus(t, webRequest(t, f, http.MethodGet, path+"/directories?"+query, nil), http.StatusBadRequest)
+	}
+	if drive.calls != 0 {
+		t.Fatal("invalid picker requests reached upstream")
+	}
+	for _, tc := range []struct {
+		query string
+		count int
+		more  bool
+	}{{"cid=0", 100, true}, {"cid=0&offset=100", 2, false}, {"cid=10", 0, false}} {
+		response = webRequest(t, f, http.MethodGet, path+"/directories?"+tc.query, nil)
+		webStatus(t, response, http.StatusOK)
+		var result struct {
+			Directories []cloudDirectoryView `json:"directories"`
+			HasMore     bool                 `json:"has_more"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || len(result.Directories) != tc.count || result.HasMore != tc.more {
+			t.Fatalf("incorrect folder-only pagination: %s", response.Body)
+		}
+		for _, private := range []string{"private-audio", "private-pick-code", fixtureCloudToken} {
+			if strings.Contains(response.Body.String(), private) {
+				t.Fatal("picker exposed file data or credentials")
+			}
+		}
+	}
+	settings := f.cfg.Cloud115.Settings()
+	settings.TargetCID = "10"
+	webStatus(t, webRequest(t, f, http.MethodPut, path+"/settings", settings), http.StatusOK)
+	saved, err := config.Load(f.path)
+	if err != nil || saved.Cloud115.TargetCID != "10" || saved.Cloud115.Enabled {
+		t.Fatal("folder selection did not persist independently of handoff")
+	}
+	settings.Enabled, settings.TargetCID = true, "0"
+	webStatus(t, webRequest(t, f, http.MethodPut, path+"/settings", settings), http.StatusBadRequest)
+	drive.err = cloud115.ErrUnauthorized
+	webStatus(t, webRequest(t, f, http.MethodGet, path+"/directories", nil), http.StatusConflict)
+	drive.err = context.DeadlineExceeded
+	webStatus(t, webRequest(t, f, http.MethodGet, path+"/directories", nil), http.StatusGatewayTimeout)
+	cloud.drive.setSession(drive, time.Now().Add(-time.Second), nil)
+	webStatus(t, webRequest(t, f, http.MethodGet, path+"/directories", nil), http.StatusConflict)
 }
 
 func TestCloudWebLoginReconcileAndLogout(t *testing.T) {

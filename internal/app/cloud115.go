@@ -36,10 +36,7 @@ func newCloudRuntime(cfg config.Cloud115, client *cloud115.Client, store *state.
 		service = cloudsync.New(store, drive, cloudsync.Options{
 			TargetCID: cfg.TargetCID, StagingDir: cfg.StagingDir, STRMDir: cfg.STRMDir, MediaBaseURL: cfg.MediaBaseURL,
 		})
-		login = &cloudLogin{
-			auth:   cloud115.NewAuthClient(cfg.Timeout.Duration),
-			client: func(token string) (cloudDriveClient, error) { return cloud115.New(token, cfg.Timeout.Duration) },
-		}
+		login = newCloudLogin(cfg)
 	}
 	if cfg.MediaEnabled {
 		var lookup media.Lookup
@@ -56,6 +53,17 @@ func newCloudRuntime(cfg config.Cloud115, client *cloud115.Client, store *state.
 	return &cloudRuntime{
 		sync: service, drive: drive,
 		handler: handler, login: login,
+	}
+}
+
+func newCloudLogin(cfg config.Cloud115) *cloudLogin {
+	timeout := cfg.Timeout.Duration
+	if timeout < time.Second || timeout > time.Minute {
+		timeout = 15 * time.Second
+	}
+	return &cloudLogin{
+		auth:   cloud115.NewAuthClient(timeout),
+		client: func(token string) (cloudDriveClient, error) { return cloud115.New(token, timeout) },
 	}
 }
 

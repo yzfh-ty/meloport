@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,6 +43,7 @@ type cloudOverviewView struct {
 	RestartRequired         bool                    `json:"restart_required"`
 	TokenConfigured         bool                    `json:"token_configured"`
 	SessionAuthenticated    bool                    `json:"session_authenticated"`
+	LoginAvailable          bool                    `json:"login_available"`
 	Account                 *cloudAccountView       `json:"account,omitempty"`
 	Stats                   cloudStats              `json:"stats"`
 	Files                   []cloudFileView         `json:"files"`
@@ -56,10 +59,13 @@ func (c *webController) cloudOverview(w http.ResponseWriter, r *http.Request) {
 		MediaRuntimeEnabled:     c.cloud != nil && c.cloud.handler != nil,
 		NavidromeRuntimeEnabled: c.cloud != nil && c.cloud.handler != nil && c.cloudBoot.NavidromeEnabled,
 		RestartRequired:         !c.cloudBoot.SameRuntime(saved), Files: []cloudFileView{},
+		LoginAvailable: c.cloud != nil && c.cloud.drive != nil && c.cloud.login != nil,
 	}
-	if view.RuntimeEnabled && c.cloud.drive != nil {
+	if c.cloud != nil && c.cloud.drive != nil {
 		view.TokenConfigured = c.cloud.drive.environment != nil
 		_, view.SessionAuthenticated, view.Account = c.cloud.drive.current()
+	}
+	if view.RuntimeEnabled {
 		var err error
 		view.Stats, view.Files, err = c.cloudFiles(r.Context())
 		if err != nil {
@@ -69,6 +75,61 @@ func (c *webController) cloudOverview(w http.ResponseWriter, r *http.Request) {
 		view.FilesTruncated = view.Stats.Total > len(view.Files)
 	}
 	webJSON(w, http.StatusOK, view)
+}
+
+var cloudDirectoryID = regexp.MustCompile(`^(0|[1-9][0-9]{0,19})$`)
+
+type cloudDirectoryView struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func (c *webController) cloudDirectories(w http.ResponseWriter, r *http.Request) {
+	if !c.cloudAuthReady(w) {
+		return
+	}
+	cid := r.URL.Query().Get("cid")
+	if cid == "" {
+		cid = "0"
+	}
+	offset := 0
+	if raw := r.URL.Query().Get("offset"); raw != "" {
+		var err error
+		offset, err = strconv.Atoi(raw)
+		if err != nil || offset < 0 || offset > 100000 {
+			webError(w, http.StatusBadRequest, "invalid directory offset")
+			return
+		}
+	}
+	if !cloudDirectoryID.MatchString(cid) {
+		webError(w, http.StatusBadRequest, "invalid 115 directory ID")
+		return
+	}
+	client, _, _ := c.cloud.drive.current()
+	if client == nil {
+		writeCloudError(w, errCloudLoginRequired)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+	files, err := client.List(ctx, cid)
+	if err != nil {
+		writeCloudError(w, err)
+		return
+	}
+	// Only names and IDs of immediate directories belong in the picker response.
+	// Audio metadata, pick codes, download URLs and credentials stay server-side.
+	directories := make([]cloudDirectoryView, 0)
+	for _, file := range files {
+		if file.IsDir {
+			directories = append(directories, cloudDirectoryView{ID: file.ID, Name: file.Name})
+		}
+	}
+	start := min(offset, len(directories))
+	end := min(start+100, len(directories))
+	webJSON(w, http.StatusOK, map[string]any{
+		"cid": cid, "directories": directories[start:end], "total": len(directories), "has_more": end < len(directories),
+	})
 }
 
 func (c *webController) cloudFiles(ctx context.Context) (cloudStats, []cloudFileView, error) {
@@ -162,6 +223,14 @@ func (c *webController) cloudSettings(w http.ResponseWriter, r *http.Request) {
 func (c *webController) cloudReady(w http.ResponseWriter) bool {
 	if c.cloud == nil || c.cloud.sync == nil || c.cloud.drive == nil || c.cloud.login == nil {
 		webError(w, http.StatusConflict, "enable 115 in settings and restart Meloport first")
+		return false
+	}
+	return true
+}
+
+func (c *webController) cloudAuthReady(w http.ResponseWriter) bool {
+	if c.cloud == nil || c.cloud.drive == nil || c.cloud.login == nil {
+		webError(w, http.StatusConflict, "115 authorization is unavailable")
 		return false
 	}
 	return true

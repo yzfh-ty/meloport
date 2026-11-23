@@ -136,7 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
     search: { keyword: '', platform: 'netease', offset: 0, limit: 20, tracks: [], loaded: false, loading: false, controller: null },
     rankings: { platform: 'netease', catalog: {}, loading: false, error: '', filter: '', category: '', controller: null },
     audio: { filters: {}, offsets: [0], nextOffset: null, items: [], loading: false, error: '', controller: null, repairing: null },
-    cloud: { data: null, dirty: false, page: 0, controller: null, operation: '', login: null },
+    cloud: { data: null, dirty: false, page: 0, controller: null, operation: '', login: null, picker: null, directorySelection: null },
     navidrome: { dirty: false },
     schedules: {}
   };
@@ -1366,19 +1366,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const active = data.runtime_enabled;
     const connected = data.session_authenticated || data.token_configured;
     const controlsReady = active && !operation && !data.restart_required;
-    const connection = data.session_authenticated ? ['已扫码授权', 'success'] : data.token_configured ? ['已配置环境变量授权', 'neutral'] : active ? ['未登录', 'warning'] : ['未启用', 'neutral'];
+    const connection = data.session_authenticated ? ['已扫码授权', 'success'] : data.token_configured ? ['已配置环境变量授权', 'neutral'] : ['未登录', active ? 'warning' : 'neutral'];
     text('cloud-auth-status', connection[0]);
     $('cloud-auth-status').className = `status-badge status-${connection[1]}`;
-    text('cloud-auth-note', data.account?.name ? `账号：${data.account.name}` : active
-      ? connected ? '可检查账号和目标目录是否可访问。' : '打开手机端 115 App，扫码授权此服务。'
-      : '115 交接已关闭，订阅歌曲下载到本地。需要网盘交接时再开启并重启。');
-    show('cloud-login', active);
-    show('cloud-setup-link', !active && !data.restart_required);
+    text('cloud-auth-note', data.account?.name ? `账号：${data.account.name}` : connected
+      ? '授权已配置，可浏览网盘并选择目标文件夹。'
+      : '使用手机端 115 App 扫码，登录后可浏览并选择目标文件夹。');
+    show('cloud-login', Boolean(data.login_available) && !data.session_authenticated);
+    show('cloud-setup-link', !active && connected && !data.restart_required);
     show('cloud-logout', data.session_authenticated);
     show('cloud-check', active && connected);
     show('cloud-counts', active);
     show('cloud-restart', data.restart_required);
-    $('cloud-login').disabled = !controlsReady;
+    $('cloud-login').disabled = !data.login_available || Boolean(operation);
     $('cloud-logout').disabled = Boolean(operation);
     $('cloud-check').disabled = !controlsReady || !connected;
     $('cloud-reconcile').disabled = !controlsReady || (!connected && !(data.stats?.confirmed > 0));
@@ -1395,6 +1395,105 @@ document.addEventListener('DOMContentLoaded', () => {
     const cloudEnabled = $('cloud-enabled').checked;
     $('cloud-storage-fields').disabled = !cloudEnabled;
     $('cloud-target-cid').required = cloudEnabled;
+    const connected = state.cloud.data?.session_authenticated || state.cloud.data?.token_configured;
+    $('cloud-browse').disabled = !connected || Boolean(state.cloud.operation);
+    $('cloud-browse').title = connected ? '' : '请先扫码登录 115 网盘';
+    const selected = state.cloud.directorySelection;
+    const matches = selected && selected.id === $('cloud-target-cid').value.trim();
+    show('cloud-target-selection', Boolean(matches));
+    if (matches) text('cloud-target-selection', `已选择：${selected.path}`);
+  }
+
+  function renderCloudDirectory() {
+    const picker = state.cloud.picker;
+    if (!picker) return;
+    const current = picker.trail.at(-1);
+    $('cloud-directory-path').replaceChildren(...picker.trail.flatMap((entry, index) => {
+      const crumb = element('button', 'directory-crumb', entry.name);
+      crumb.type = 'button';
+      crumb.disabled = index === picker.trail.length - 1;
+      if (crumb.disabled) crumb.setAttribute('aria-current', 'location');
+      crumb.addEventListener('click', () => loadCloudDirectory(picker.trail.slice(0, index + 1)));
+      return index ? [element('span', '', '/'), crumb] : [crumb];
+    }));
+    $('cloud-directory-list').replaceChildren(...picker.directories.map((entry) => {
+      const button = element('button', 'directory-entry');
+      button.type = 'button';
+      button.append(icon('folder'), element('span', '', entry.name));
+      button.setAttribute('aria-label', `打开文件夹 ${entry.name}`);
+      button.addEventListener('click', () => loadCloudDirectory([...picker.trail, entry]));
+      return button;
+    }));
+    show('cloud-directory-loading', picker.loading);
+    cloudFeedback('cloud-directory-error', picker.error);
+    show('cloud-directory-retry', Boolean(picker.error));
+    show('cloud-directory-empty', picker.loaded && picker.directories.length === 0);
+    show('cloud-directory-more', picker.loaded && picker.hasMore);
+    $('cloud-directory-more').disabled = picker.loading;
+    $('cloud-directory-select').disabled = !picker.loaded || picker.loading || current.id === '0';
+    text('cloud-directory-selection', current.id === '0' ? '请选择一个子文件夹，根目录不可用。' : `目标：${current.name}`);
+  }
+
+  async function loadCloudDirectory(trail, more = false) {
+    const picker = state.cloud.picker;
+    if (!picker) return;
+    if (picker.controller) picker.controller.abort();
+    const controller = new AbortController();
+    picker.controller = controller;
+    picker.trail = trail;
+    if (!more) { picker.directories = []; picker.offset = 0; }
+    picker.loading = true;
+    picker.loaded = false;
+    picker.error = '';
+    renderCloudDirectory();
+    try {
+      const cid = trail.at(-1).id;
+      const data = await request(`${cloudPath}/directories?cid=${encodeURIComponent(cid)}&offset=${picker.offset}`, { signal: controller.signal, timeout: 95000 });
+      if (state.cloud.picker !== picker || controller.signal.aborted) return;
+      if (data.cid !== cid || !Array.isArray(data.directories) || data.directories.length > 100 ||
+          data.directories.some((entry) => typeof entry.id !== 'string' || !/^[1-9][0-9]{0,19}$/.test(entry.id) || typeof entry.name !== 'string' || !entry.name) ||
+          (data.has_more && data.directories.length === 0)) throw new Error('网盘返回了无法识别的文件夹列表。');
+      picker.directories.push(...data.directories);
+      picker.offset += data.directories.length;
+      picker.hasMore = Boolean(data.has_more);
+      picker.loaded = true;
+    } catch (error) {
+      if (state.cloud.picker === picker && !controller.signal.aborted) picker.error = error.message;
+    } finally {
+      if (state.cloud.picker === picker && picker.controller === controller) {
+        picker.controller = null;
+        picker.loading = false;
+        renderCloudDirectory();
+      }
+    }
+  }
+
+  function cancelCloudDirectory() {
+    if (state.cloud.picker?.controller) state.cloud.picker.controller.abort();
+    state.cloud.picker = null;
+    $('cloud-directory-list').replaceChildren();
+    $('cloud-directory-path').replaceChildren();
+  }
+
+  function openCloudDirectory(trigger) {
+    if (trigger.disabled) return;
+    cancelCloudDirectory();
+    state.cloud.picker = { trail: [], directories: [], offset: 0, loaded: false, loading: false, hasMore: false, error: '', controller: null };
+    state.dialogTriggers.set('cloud-directory-dialog', trigger);
+    $('cloud-directory-dialog').showModal();
+    loadCloudDirectory([{ id: '0', name: '115 网盘' }]);
+  }
+
+  function selectCloudDirectory() {
+    const picker = state.cloud.picker;
+    const current = picker?.trail.at(-1);
+    if (!current || current.id === '0' || !picker.loaded || picker.loading) return;
+    $('cloud-target-cid').value = current.id;
+    state.cloud.directorySelection = { id: current.id, path: picker.trail.map((entry) => entry.name).join(' / ') };
+    state.cloud.dirty = true;
+    closeDialog('cloud-directory-dialog');
+    renderCloud();
+    toast('目标文件夹已选择，请保存设置');
   }
 
   function renderNavidrome() {
@@ -1607,7 +1706,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (session.qrURL) URL.revokeObjectURL(session.qrURL);
         closeDialog('cloud-login-dialog');
         await loadCloud();
-        toast('115 网盘已授权');
+        toast('115 网盘已授权，可以选择目标文件夹');
         return;
       }
       if (result.status === 'waiting' || result.status === 'scanned') {
@@ -1730,6 +1829,11 @@ document.addEventListener('DOMContentLoaded', () => {
   $('cloud-login').addEventListener('click', (event) => startCloudLogin(event.currentTarget));
   $('cloud-login-retry').addEventListener('click', (event) => startCloudLogin(event.currentTarget));
   $('cloud-login-dialog').addEventListener('close', cancelCloudLogin);
+  $('cloud-browse').addEventListener('click', (event) => openCloudDirectory(event.currentTarget));
+  $('cloud-directory-dialog').addEventListener('close', cancelCloudDirectory);
+  $('cloud-directory-select').addEventListener('click', selectCloudDirectory);
+  $('cloud-directory-retry').addEventListener('click', () => loadCloudDirectory(state.cloud.picker.trail));
+  $('cloud-directory-more').addEventListener('click', () => loadCloudDirectory(state.cloud.picker.trail, true));
   $('cloud-logout').addEventListener('click', (event) => cloudAction(event.currentTarget, 'logout', '正在退出', async () => {
     await request(`${cloudPath}/session`, { method: 'DELETE' });
     cloudFeedback('cloud-check-result', '');
@@ -1826,6 +1930,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (state.audio.controller) state.audio.controller.abort();
     if (state.cloud.controller) state.cloud.controller.abort();
     cancelCloudLogin();
+    cancelCloudDirectory();
   });
   setupSchedule('settings');
   setupSchedule('task');

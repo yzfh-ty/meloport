@@ -73,6 +73,17 @@ type rankingCache struct {
 func newWebController(cfg *config.Config, tasks []config.Task, queue *taskQueue, logger *slog.Logger, options serviceOptions) *webController {
 	c := &webController{cfg: cfg, queue: queue, logger: logger, store: options.Store, metadata: options.Metadata, audio: options.Audio, webDir: options.WebDir, tasks: make(map[string]config.Task), entries: make(map[string]cron.EntryID), scheduler: cron.New(cron.WithLocation(cfg.Location)), rankings: make(map[string]rankingCache)}
 	c.cloud, c.cloudBoot = options.Cloud, cfg.Cloud115
+	// Browsing and QR authorization must work before a handoff target is set.
+	// This creates no listener, worker, or upstream request until used explicitly.
+	if c.cloud == nil {
+		c.cloud = &cloudRuntime{}
+	}
+	if c.cloud.drive == nil {
+		c.cloud.drive = &cloudDrive{}
+	}
+	if c.cloud.login == nil {
+		c.cloud.login = newCloudLogin(cfg.Cloud115)
+	}
 	c.auth = options.Auth
 	if options.ConfigPath != "" {
 		c.editor = config.NewEditor(options.ConfigPath)
@@ -211,6 +222,7 @@ func (c *webController) handler(health http.Handler, ready *atomic.Bool) http.Ha
 	mux.HandleFunc("POST /api/audio/{task}/{platform}/{track}/retag", c.retagAudio)
 	mux.HandleFunc("PUT /api/settings", c.settings)
 	mux.HandleFunc("GET /api/cloud115", c.cloudOverview)
+	mux.HandleFunc("GET /api/cloud115/directories", c.cloudDirectories)
 	mux.HandleFunc("PUT /api/cloud115/settings", c.cloudSettings)
 	mux.HandleFunc("POST /api/cloud115/check", c.cloudCheck)
 	mux.HandleFunc("POST /api/cloud115/reconcile", c.cloudReconcile)

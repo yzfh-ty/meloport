@@ -791,10 +791,10 @@
               <div class="panel-heading">
                 <div>
                   <h2 id="cloud-account-title">115 网盘 <span id="cloud-auth-status" class="status-badge status-neutral">正在读取</span></h2>
-                  <p id="cloud-auth-note">启用 115 后，可用手机端 115 App 扫码授权。</p>
+                  <p id="cloud-auth-note">扫码登录后，可直接浏览网盘并选择目标文件夹。</p>
                 </div>
                 <div class="heading-actions cloud-actions">
-                  <a id="cloud-setup-link" class="button button-primary" href="#cloud115" hidden>配置 115 网盘</a>
+                  <a id="cloud-setup-link" class="button button-secondary" href="#cloud115" hidden>配置网盘交接</a>
                   <button id="cloud-logout" class="button button-secondary" type="button" hidden>退出扫码登录</button>
                   <button id="cloud-check" class="button button-secondary" type="button" disabled hidden>检查连接</button>
                   <button id="cloud-login" class="button button-primary" type="button" disabled hidden>扫码登录</button>
@@ -842,12 +842,16 @@
                     <input type="checkbox" id="cloud-enabled" name="enabled" />
                     <span><strong>启用 115 网盘交接与 STRM</strong><small>默认关闭。开启后，完整音频会移入 CD2 暂存目录，适用于所有订阅任务。</small></span>
                   </label>
-                  <fieldset id="cloud-storage-fields" disabled>
                     <div class="field">
-                      <label for="cloud-target-cid">115 目标目录 ID</label>
-                      <input id="cloud-target-cid" name="target_cid" type="text" inputmode="numeric" maxlength="20" pattern="[1-9][0-9]{0,19}" placeholder="例如 123456789" aria-describedby="cloud-target-hint" />
-                      <p id="cloud-target-hint" class="field-hint">在 115 中打开专用目录，填写地址中的 CID。CD2 应上传到同一目录并保留任务子目录。</p>
+                      <label for="cloud-target-cid">115 目标文件夹</label>
+                      <div class="directory-input">
+                        <input id="cloud-target-cid" name="target_cid" type="text" inputmode="numeric" maxlength="20" pattern="[1-9][0-9]{0,19}" placeholder="选择文件夹，或填写目录 ID" aria-describedby="cloud-target-hint cloud-target-selection" />
+                        <button id="cloud-browse" class="button button-secondary" type="button" disabled><svg class="icon" aria-hidden="true"><use href="#icon-folder" /></svg>选择文件夹</button>
+                      </div>
+                      <p id="cloud-target-selection" class="field-hint" role="status" hidden></p>
+                      <p id="cloud-target-hint" class="field-hint">扫码登录后可浏览选择，也可手动填写目录 ID。CD2 应上传到同一文件夹并保留子目录。</p>
                     </div>
+                  <fieldset id="cloud-storage-fields" disabled>
                     <div class="form-grid">
                       <div class="field">
                         <label for="cloud-staging-dir">CD2 暂存目录</label>
@@ -1331,6 +1335,29 @@
         ><button id="delete-confirm" class="button button-danger" type="button">
           删除任务
         </button>
+      </div>
+    </dialog>
+
+    <dialog id="cloud-directory-dialog" class="modal" aria-labelledby="cloud-directory-title">
+      <div class="modal-header">
+        <h2 id="cloud-directory-title">选择 115 目标文件夹</h2>
+        <button class="icon-button" type="button" data-close="cloud-directory-dialog" aria-label="关闭文件夹选择"><svg class="icon" aria-hidden="true"><use href="#icon-close" /></svg></button>
+      </div>
+      <div class="modal-body directory-browser">
+        <nav id="cloud-directory-path" class="directory-path" aria-label="当前网盘路径"></nav>
+        <div id="cloud-directory-loading" class="loading-state" role="status" hidden><span class="spinner"></span>正在读取文件夹…</div>
+        <div id="cloud-directory-error" class="form-error-summary" role="alert" hidden></div>
+        <button id="cloud-directory-retry" class="button button-secondary" type="button" hidden>重新读取</button>
+        <p id="cloud-directory-empty" class="field-hint directory-empty" role="status" hidden>当前文件夹没有子文件夹。</p>
+        <div id="cloud-directory-list" class="directory-list" role="group" aria-label="子文件夹"></div>
+        <button id="cloud-directory-more" class="button button-secondary" type="button" hidden>加载更多文件夹</button>
+      </div>
+      <div class="modal-footer directory-footer">
+        <p id="cloud-directory-selection" class="field-hint" role="status">请选择一个子文件夹，根目录不可用。</p>
+        <div class="heading-actions">
+          <button class="button button-secondary" type="button" data-close="cloud-directory-dialog">取消</button>
+          <button id="cloud-directory-select" class="button button-primary" type="button" disabled>选择此文件夹</button>
+        </div>
       </div>
     </dialog>
 
