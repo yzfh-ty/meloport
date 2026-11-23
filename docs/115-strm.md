@@ -1,6 +1,6 @@
 # 115 网盘、CD2 与 STRM 配置指南
 
-Meloport 默认只把订阅歌曲下载到本地并补齐音频标签。115 交接、独立媒体监听、Navidrome 接入和榜单歌单同步均默认关闭，已有地址配置不会自动开启这些功能。
+Meloport 默认只把订阅歌曲下载到本地并补齐音频标签。115 交接、独立媒体监听、Navidrome 接入和歌单同步均默认关闭，已有地址配置不会自动开启这些功能。Navidrome 歌单同步支持本地音乐和 115 音频，不需要先开启网盘交接。
 
 手动启用 115 交接后，Meloport 将完整音频移入 CD2 暂存目录，由 CD2 上传到 115。Meloport 核对远端文件后生成 `.strm`。115 交接适用于此实例的所有订阅任务，首次联调建议使用专用目录和曲目数量少的任务。
 
@@ -19,7 +19,7 @@ Meloport 默认只把订阅歌曲下载到本地并补齐音频标签。115 交�
 | Navidrome | Navidrome 接入 | `navidrome_enabled` | `false`，仅填写地址不会启用反代 |
 | Navidrome | Navidrome 服务地址 | `navidrome_url` | 启用 Navidrome 时必填 |
 | Navidrome | Navidrome 中的音乐目录 | `navidrome_mount_root` | Navidrome 运行环境看到的音乐目录绝对路径 |
-| Navidrome | Navidrome 榜单歌单同步 | `navidrome_playlist_sync` | `false`，开启时需同时启用 115 和 Navidrome |
+| Navidrome | 同步创建 Navidrome 歌单 | `navidrome_playlist_sync` | `false`，将普通歌单订阅和排行榜同步到 Navidrome；需要接入账号 |
 | Navidrome | 独立媒体端口 | `media_enabled` | `false`，STRM 和 Navidrome 共用的播放入口 |
 | Navidrome | 播放器访问地址 | `media_base_url` | `http://127.0.0.1:8081`，写入 STRM。跨设备使用播放器能访问的 HTTPS 地址 |
 
@@ -27,7 +27,7 @@ Meloport 默认只把订阅歌曲下载到本地并补齐音频标签。115 交�
 
 只启用 115 交接不会启动媒体监听，也不会接入 Navidrome。只启用 Navidrome 不会开启 CD2 交接，订阅歌曲继续下载到本地。各开关及监听地址修改后均需重启服务生效。
 
-「115 与 STRM」和「Navidrome」各自保存当前页的设置，切换菜单会保留未保存的草稿。保存一页不会同时提交另一页的草稿。已启用 Navidrome 榜单歌单同步时，需先在 Navidrome 页关闭该同步，再关闭 115 交接。
+「115 与 STRM」和「Navidrome」各自保存当前页的设置，切换菜单会保留未保存的草稿。保存一页不会同时提交另一页的草稿。Navidrome 歌单同步与 115 开关独立；关闭 115 交接后，后续同步使用本地下载目录。
 
 ## 2. 扫码登录并检查连接
 
@@ -63,7 +63,15 @@ Meloport 默认只把订阅歌曲下载到本地并补齐音频标签。115 交�
 1. 打开侧边栏的「Navidrome」菜单，分别开启「Navidrome 接入」和「独立媒体端口」。填写播放器地址、`navidrome_url`，以及 Navidrome 运行环境看到的音乐目录绝对路径 `navidrome_mount_root`。保存后重启。
 2. 将 Subsonic 客户端连接到 Meloport 媒体地址，使用 Navidrome 的账号和原生认证。本地模式的音频请求由 Navidrome 处理；无需开启 115，也不会将本地音频移入 CD2 目录。请勿将 Meloport 加入 Navidrome 的外部鉴权代理信任列表。
 3. 如果需要 115 的 302 直链播放，另行启用 115 交接、完成远端核对，并让 Navidrome 扫描 CD2 挂载的真实音频。在对应播放器设置中开启 **Report Real Path**，关闭服务端转码和码率限制。
-4. 如需自动创建榜单歌单，先在服务进程环境设置 `MELOPORT_NAVIDROME_USERNAME` 和 `MELOPORT_NAVIDROME_PASSWORD`，再启用「同步创建 Navidrome 榜单歌单」，保存并重启。此功能默认关闭，需同时启用 115 和 Navidrome。远程服务必须使用 HTTPS，本机可用 HTTP。密码只从 Meloport 进程环境读取。Navidrome 扫描完所有文件后，后续榜单同步才会创建或更新歌单；普通订阅歌单不会发布。
+4. 如需自动创建或更新歌单，先在服务进程环境设置 `MELOPORT_NAVIDROME_USERNAME` 和 `MELOPORT_NAVIDROME_PASSWORD`，再启用「同步创建 Navidrome 歌单」，保存并重启。这是 Navidrome 的账号，Meloport 用它调用歌单写入接口。普通歌单订阅和排行榜均支持；本地音乐模式无需开启 115。远程服务必须使用 HTTPS，本机可用 HTTP。密码只从 Meloport 进程环境读取。
+
+本地模式下，「Navidrome 中的音乐目录」应填写**下载根目录在 Navidrome 运行环境中对应的路径**。例如 Meloport 下载根目录为 `E:\music`，任务文件为 `E:\music\favorites\netease-1.flac`；该根目录映射到 Navidrome 的 `/music` 时，填写 `/music`，歌曲路径应为 `/music/favorites/netease-1.flac`。任务的自定义输出目录不在下载根目录内时，无法通过这个根目录映射，发布会提示路径不匹配。115 模式则填写 CD2 挂载的 115 目标目录，歌曲相对路径以数据库中保存的交接记录为准。
+
+每次完整任务同步结束后，Meloport 按文件路径、歌名、歌手和可用的专辑信息匹配 Navidrome 已入库的曲目。所有歌曲匹配成功才创建或更新；Navidrome 尚未扫描完成时保留原歌单，在日志中记录提示，下次任务同步再试。全部歌曲已下载、本次全部跳过时，也会更新歌单。115 的「核对并生成」不会触发歌单发布。
+
+歌单名为「平台 - 歌单名」，例如 `网易云音乐 - 收藏`，不附加任务 ID。已有唯一的旧名 `网易云音乐 - 收藏 [favorites]` 时，会在下一次成功发布时改名并保留其 Navidrome 歌单 ID。发现多个同名歌单时停止更新，避免选错。更新按当前订阅的曲目顺序替换歌单内容，已退出订阅的歌曲以及手动加到该歌单的歌曲会从歌单中移除，音频文件仍保留。
+
+同一任务按平台歌曲 ID 去重，重复成员只处理一次，完整的已下载文件会跳过。不同任务使用独立输出目录，同一平台的同一首歌可能各下载一份；跨平台或不同歌曲 ID 不会按歌名合并。创建、更新或改名 Navidrome 歌单本身不会解析或下载音频。
 
 经过 Meloport 的 `/rest/stream` 或 `/rest/stream.view` 请求，在原生鉴权成功、有真实路径且能匹配远端文件时尝试 302。显式请求转码或限码率、无法匹配、取直链失败以及 HLS 等其他端点继续由 Navidrome 处理。直接连接 Navidrome 时，Navidrome 从 CD2 挂载读取音频。
 
@@ -78,7 +86,7 @@ Meloport 默认只把订阅歌曲下载到本地并补齐音频标签。115 交�
 | `MELOPORT_115_POLL_INTERVAL` | `1m` | 自动核对间隔，范围 `15s`–`24h` |
 | `MELOPORT_115_TIMEOUT` | `15s` | 115 和 Navidrome 请求超时，范围 `1s`–`1m` |
 | `MELOPORT_MEDIA_LISTEN` | `127.0.0.1:8081` | 独立媒体监听地址；需在网页启用媒体端口 |
-| `MELOPORT_NAVIDROME_USERNAME` | 无 | 创建榜单歌单使用的 Navidrome 账号 |
+| `MELOPORT_NAVIDROME_USERNAME` | 无 | 创建订阅歌单和榜单歌单使用的 Navidrome 账号 |
 | `MELOPORT_NAVIDROME_PASSWORD` | 无 | 上述账号的密码，仅从进程环境读取 |
 
 在启动 Meloport 的同一个 PowerShell 窗口中配置，例如：
@@ -87,7 +95,7 @@ Meloport 默认只把订阅歌曲下载到本地并补齐音频标签。115 交�
 $env:MELOPORT_MEDIA_LISTEN = '127.0.0.1:18081'
 $env:MELOPORT_115_POLL_INTERVAL = '2m'
 $env:MELOPORT_NAVIDROME_USERNAME = 'meloport'
-$navidromePassword = Read-Host 'Navidrome 歌单同步密码' -AsSecureString
+$navidromePassword = Read-Host 'Navidrome 账号密码' -AsSecureString
 $env:MELOPORT_NAVIDROME_PASSWORD = [System.Net.NetworkCredential]::new('', $navidromePassword).Password
 Remove-Variable navidromePassword
 .\bin\meloport.exe serve -config config.yaml
@@ -107,6 +115,7 @@ Remove-Variable navidromePassword
 | 已确认但未生成 STRM | 检查导出目录权限、同名文件类型和服务日志，再点「核对并生成」。 |
 | 其他设备打不开 STRM | 确认播放器支持音频 STRM，地址在播放器所在网络可达，HTTPS 反代指向媒体端口。修改播放地址并重启后重新核对，使导出文件使用新地址。 |
 | Navidrome 能播放但没有 302 | 核对客户端连接的实际地址、Report Real Path、挂载目录绝对路径和 115 映射，确认此次播放采用原文件格式。 |
+| 下载已完成但 Navidrome 歌单未创建 | 确认已开启歌单同步、提供 Navidrome 账号环境变量，且 Navidrome 已扫描真实音频。核对音乐根目录映射，再运行一次订阅任务；查看日志中的歌单同步提示。 |
 
 ## 命令行与验收范围
 

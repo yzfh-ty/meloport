@@ -87,6 +87,7 @@ type Task struct {
 	Quality       string
 	AutoDowngrade bool
 	Directory     string
+	MusicRoot     string // Current download root, mapped to Navidrome's music root.
 }
 
 // CollectionFolder returns a portable, task-stable folder name that retains

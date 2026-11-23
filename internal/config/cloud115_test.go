@@ -76,7 +76,10 @@ func TestMediaAndNavidromeRequireExplicitSwitches(t *testing.T) {
 		{"Navidrome without media", "  navidrome_enabled: true\n  navidrome_url: http://127.0.0.1:4533\n  navidrome_mount_root: /music\n", false},
 		{"Navidrome without cloud", "  media_enabled: true\n  navidrome_enabled: true\n  navidrome_url: http://127.0.0.1:4533\n  navidrome_mount_root: /music\n", true},
 		{"enabled Navidrome missing address", "  media_enabled: true\n  navidrome_enabled: true\n  navidrome_mount_root: /music\n", false},
-		{"playlist sync without cloud", "  media_enabled: true\n  navidrome_enabled: true\n  navidrome_url: http://127.0.0.1:4533\n  navidrome_mount_root: /music\n  navidrome_playlist_sync: true\n", false},
+		{"local playlist sync", "  media_enabled: true\n  navidrome_enabled: true\n  navidrome_url: http://127.0.0.1:4533\n  navidrome_mount_root: /music\n  navidrome_playlist_sync: true\n  navidrome_username: sync\n", true},
+		{"local playlist sync missing account", "  media_enabled: true\n  navidrome_enabled: true\n  navidrome_url: http://127.0.0.1:4533\n  navidrome_mount_root: /music\n  navidrome_playlist_sync: true\n", false},
+		{"local playlist sync remote cleartext", "  media_enabled: true\n  navidrome_enabled: true\n  navidrome_url: http://music.example.com:4533\n  navidrome_mount_root: /music\n  navidrome_playlist_sync: true\n  navidrome_username: sync\n", false},
+		{"local playlist sync invalid timeout", "  media_enabled: true\n  navidrome_enabled: true\n  navidrome_url: http://127.0.0.1:4533\n  navidrome_mount_root: /music\n  navidrome_playlist_sync: true\n  navidrome_username: sync\n  timeout: 61s\n", false},
 	} {
 		t.Run(item.name, func(t *testing.T) {
 			_, err := Load(writeConfig(t, "cloud115:\n"+item.settings+"tasks: []\n"))
@@ -259,5 +262,11 @@ func TestSameRuntimeTracksEnabledMediaAndNavidromeSettings(t *testing.T) {
 	other.NavidromeEnabled = true
 	if base.SameRuntime(other) {
 		t.Fatal("enabling a Navidrome proxy must require a restart")
+	}
+	base.NavidromeEnabled, base.NavidromePlaylistSync = true, true
+	other = base
+	other.Timeout.Duration = 30 * time.Second
+	if base.SameRuntime(other) {
+		t.Fatal("changing the local Navidrome publication timeout must require a restart")
 	}
 }

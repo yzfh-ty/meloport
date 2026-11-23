@@ -163,6 +163,37 @@ func TestCloudWebKeepsDeploymentSettingsOnTheServer(t *testing.T) {
 	}
 }
 
+func TestCloudWebKeepsNavidromePlaylistSyncEnabledWhen115IsOff(t *testing.T) {
+	t.Setenv("MELOPORT_NAVIDROME_USERNAME", "sync-fixture")
+	f := newWebFixture(t)
+	settings := f.cfg.Cloud115.Settings()
+	settings.MediaEnabled, settings.NavidromeEnabled, settings.NavidromePlaylistSync = true, true, true
+	settings.NavidromeURL, settings.NavidromeMountRoot = "http://127.0.0.1:4533", "/music"
+	putFixtureCloudSettings(t, f, settings)
+	readSettings := func() config.Cloud115Settings {
+		t.Helper()
+		response := webRequest(t, f, http.MethodGet, "/api/cloud115", nil)
+		webStatus(t, response, http.StatusOK)
+		var view cloudOverviewView
+		if err := json.Unmarshal(response.Body.Bytes(), &view); err != nil {
+			t.Fatal(err)
+		}
+		return view.Settings
+	}
+	local := readSettings()
+	if local.Enabled || !local.NavidromePlaylistSync {
+		t.Fatal("local mode cannot retain Navidrome playlist publication")
+	}
+	settings.Enabled, settings.TargetCID = true, "12345"
+	putFixtureCloudSettings(t, f, settings)
+	settings.Enabled = false
+	putFixtureCloudSettings(t, f, settings)
+	local = readSettings()
+	if local.Enabled || !local.NavidromeEnabled || !local.NavidromePlaylistSync || local.NavidromeURL != settings.NavidromeURL {
+		t.Fatal("turning off 115 disabled or changed Navidrome publication")
+	}
+}
+
 type webCloudQRFixture struct {
 	status int
 }

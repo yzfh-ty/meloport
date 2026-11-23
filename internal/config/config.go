@@ -106,6 +106,7 @@ type Task struct {
 	Directory     string `yaml:"directory"`
 	Enabled       *bool  `yaml:"enabled"`
 	PlaylistID    string `yaml:"-"`
+	MusicRoot     string `yaml:"-"`
 }
 
 func (t Task) IsEnabled() bool { return t.Enabled == nil || *t.Enabled }
@@ -119,7 +120,7 @@ func (t Task) Model() model.Task {
 	if sourceType == "" {
 		sourceType = "playlist"
 	}
-	return model.Task{ID: t.ID, SourceType: sourceType, SourceID: sourceID, PlaylistID: t.PlaylistID, Platform: t.Platform, Quality: t.Quality, AutoDowngrade: t.AutoDowngrade != nil && *t.AutoDowngrade, Directory: t.Directory}
+	return model.Task{ID: t.ID, SourceType: sourceType, SourceID: sourceID, PlaylistID: t.PlaylistID, Platform: t.Platform, Quality: t.Quality, AutoDowngrade: t.AutoDowngrade != nil && *t.AutoDowngrade, Directory: t.Directory, MusicRoot: t.MusicRoot}
 }
 
 func defaults() Config {
@@ -295,6 +296,7 @@ func (c *Config) validate(baseDir string) error {
 			t.Directory = t.ID
 		}
 		t.Directory = resolvePath(c.Storage.MusicDir, t.Directory)
+		t.MusicRoot = c.Storage.MusicDir
 		key := strings.ToLower(t.Directory)
 		if dirs[key] {
 			return fmt.Errorf("task %s: each task must have its own output directory", t.ID)

@@ -213,13 +213,13 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 		return err
 	}
 	engine := syncer.NewWithSources(metadata, metadata, downloader, store)
+	if cfg.Cloud115.NavidromeEnabled && cfg.Cloud115.NavidromePlaylistSync {
+		engine.UsePlaylistPublisher(newNavidromePublisher(cfg.Cloud115, store))
+	}
 	var cloud *cloudRuntime
 	if cfg.Cloud115.Enabled || cfg.Cloud115.MediaEnabled {
 		cloud = newCloudRuntime(cfg.Cloud115, drive, store)
 		if cfg.Cloud115.Enabled {
-			if cfg.Cloud115.NavidromeEnabled && cfg.Cloud115.NavidromePlaylistSync {
-				engine.UsePlaylistPublisher(cloud)
-			}
 			if command == "retag" {
 				engine.UseCloudStorage(cloud.sync)
 			} else {
@@ -276,7 +276,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 				}
 			}
 		}
-		if cloud != nil && ctx.Err() == nil {
+		if cloud != nil && cloud.sync != nil && ctx.Err() == nil {
 			if err := cloud.sync.Reconcile(ctx); err != nil {
 				runErrors = append(runErrors, fmt.Errorf("reconcile 115 files: %w", err))
 			}

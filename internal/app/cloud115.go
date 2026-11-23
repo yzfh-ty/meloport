@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -15,19 +14,14 @@ import (
 	"meloport/internal/cloudsync"
 	"meloport/internal/config"
 	"meloport/internal/media"
-	"meloport/internal/model"
-	"meloport/internal/navidrome"
 	"meloport/internal/state"
 )
 
 type cloudRuntime struct {
-	sync            *cloudsync.Service
-	handler         http.Handler
-	drive           *cloudDrive
-	login           *cloudLogin
-	navidrome       *navidrome.Client
-	navidromeConfig config.Cloud115
-	navidromeReady  bool
+	sync    *cloudsync.Service
+	handler http.Handler
+	drive   *cloudDrive
+	login   *cloudLogin
 }
 
 func newCloudRuntime(cfg config.Cloud115, client *cloud115.Client, store *state.Store) *cloudRuntime {
@@ -59,62 +53,10 @@ func newCloudRuntime(cfg config.Cloud115, client *cloud115.Client, store *state.
 		}
 		handler = media.New(lookup, resolver, upstream, mountRoot)
 	}
-	var navidromeClient *navidrome.Client
-	var navidromeReady bool
-	if cfg.Enabled && cfg.NavidromeEnabled && cfg.NavidromePlaylistSync {
-		if password := optionalEnv(cfg.NavidromePasswordEnv); password != "" {
-			navidromeClient, _ = navidrome.New(navidrome.Options{
-				BaseURL: cfg.NavidromeURL, Username: cfg.NavidromeUsername, Password: password,
-				MountRoot: cfg.NavidromeMountRoot, Timeout: cfg.Timeout.Duration,
-			})
-			navidromeReady = navidromeClient != nil
-		}
-	}
 	return &cloudRuntime{
 		sync: service, drive: drive,
-		navidrome: navidromeClient, navidromeConfig: cfg, navidromeReady: navidromeReady,
 		handler: handler, login: login,
 	}
-}
-
-func (c *cloudRuntime) PublishPlaylist(ctx context.Context, task model.Task, playlist model.Playlist, downloads []state.Download) error {
-	if !c.navidromeConfig.Enabled || !c.navidromeConfig.NavidromeEnabled || !c.navidromeConfig.NavidromePlaylistSync || task.SourceType != "ranking" {
-		return nil
-	}
-	if c.navidrome == nil {
-		return fmt.Errorf("Navidrome playlist sync credentials are unavailable or invalid; check %s", c.navidromeConfig.NavidromePasswordEnv)
-	}
-	provider := task.Platform
-	if provider == "" {
-		provider = "netease"
-	}
-	collection := model.CollectionFolder(task.ID, playlist.Name)
-	byTrack := make(map[string]state.Download, len(downloads))
-	for _, item := range downloads {
-		if item.Provider == provider {
-			byTrack[item.TrackID] = item
-		}
-	}
-	candidates := make([]navidrome.Candidate, 0, len(playlist.Tracks))
-	for _, track := range playlist.Tracks {
-		item, found := byTrack[track.ID]
-		if !found || !filepath.IsAbs(item.Path) || filepath.Base(item.Path) == "." {
-			return fmt.Errorf("track %s has no saved file for Navidrome publication", track.ID)
-		}
-		candidates = append(candidates, navidrome.Candidate{
-			Title: track.Name, Artists: track.Artists, Album: track.Album,
-			RelativePath: filepath.ToSlash(filepath.Join(provider, collection, filepath.Base(item.Path))),
-		})
-	}
-	platformName := map[string]string{"netease": "网易云音乐", "qq": "QQ音乐", "kugou": "酷狗音乐"}[provider]
-	if platformName == "" {
-		return errors.New("unsupported Navidrome playlist platform")
-	}
-	name := fmt.Sprintf("%s - %s [%s]", platformName, playlist.Name, task.ID)
-	if err := c.navidrome.Publish(ctx, name, candidates); err != nil {
-		return fmt.Errorf("publish Navidrome playlist %q: %w", name, err)
-	}
-	return nil
 }
 
 var errCloudLoginRequired = errors.New("sign in to 115 in Meloport or set the configured access token environment variable")

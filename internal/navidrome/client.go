@@ -95,8 +95,9 @@ func New(opts Options) (*Client, error) {
 
 // Publish resolves every requested track against its exact mounted path and
 // metadata before it creates or changes a playlist. Missing or ambiguous
-// library entries leave the existing playlist untouched.
-func (c *Client) Publish(ctx context.Context, playlistName string, tracks []Candidate) error {
+// library entries leave the existing playlist untouched. A unique legacy name
+// can be renamed in place after all songs match, preserving its playlist ID.
+func (c *Client) Publish(ctx context.Context, playlistName string, tracks []Candidate, legacyNames ...string) error {
 	if strings.TrimSpace(playlistName) == "" || len([]rune(playlistName)) > 300 || strings.ContainsAny(playlistName, "\x00\r\n") {
 		return errors.New("Navidrome playlist name is invalid")
 	}
@@ -134,6 +135,19 @@ func (c *Client) Publish(ctx context.Context, playlistName string, tracks []Cand
 		}
 	}
 	if found == nil {
+		for _, name := range legacyNames {
+			for i := range playlists {
+				if playlists[i].Name != name {
+					continue
+				}
+				if found != nil && found.ID != playlists[i].ID {
+					return errors.New("Navidrome contains multiple playlists with the legacy name")
+				}
+				found = &playlists[i]
+			}
+		}
+	}
+	if found == nil {
 		form := url.Values{"name": {playlistName}}
 		for _, id := range ids {
 			form.Add("songId", id)
@@ -152,6 +166,9 @@ func (c *Client) Publish(ctx context.Context, playlistName string, tracks []Cand
 		return err
 	}
 	form := url.Values{"playlistId": {found.ID}}
+	if found.Name != playlistName {
+		form.Set("name", playlistName)
+	}
 	for i := range current {
 		form.Add("songIndexToRemove", fmt.Sprint(i))
 	}

@@ -95,6 +95,53 @@ func TestPublishReplacesExistingPlaylistContents(t *testing.T) {
 	}
 }
 
+func TestPublishRenamesLegacyPlaylistWithoutCreatingAnother(t *testing.T) {
+	const name, legacyName = "网易云音乐 - 榜单", "网易云音乐 - 榜单 [daily]"
+	storedName := legacyName
+	var creates, updates int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		form := readAuthedForm(t, r)
+		switch r.URL.Path {
+		case "/rest/search3.view":
+			writeResponse(w, map[string]any{"searchResult3": map[string]any{"song": map[string]any{"id": "song", "title": "歌曲", "artist": "歌手", "path": "/music/daily/netease-1.flac"}}})
+		case "/rest/getSong.view":
+			writeResponse(w, map[string]any{"song": map[string]any{"id": "song", "title": "歌曲", "artist": "歌手", "path": "/music/daily/netease-1.flac"}})
+		case "/rest/getPlaylists.view":
+			writeResponse(w, map[string]any{"playlists": map[string]any{"playlist": map[string]any{"id": "keep-this-id", "name": storedName}}})
+		case "/rest/getPlaylist.view":
+			writeResponse(w, map[string]any{"playlist": map[string]any{"entry": []any{map[string]any{"id": "song"}}}})
+		case "/rest/createPlaylist.view":
+			creates++
+			writeResponse(w, map[string]any{})
+		case "/rest/updatePlaylist.view":
+			updates++
+			if form.Get("playlistId") != "keep-this-id" || strings.Join(form["songIdToAdd"], ",") != "song" {
+				t.Error("legacy rename changed the playlist identity or duplicated a song")
+			}
+			if updates == 1 && form.Get("name") != name {
+				t.Error("legacy playlist was not renamed")
+			}
+			if form.Get("name") != "" {
+				storedName = form.Get("name")
+			}
+			writeResponse(w, map[string]any{})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := mustClient(t, server.URL, "alice", "secret")
+	tracks := []Candidate{{Title: "歌曲", Artists: []string{"歌手"}, RelativePath: "daily/netease-1.flac"}}
+	for i := 0; i < 2; i++ {
+		if err := client.Publish(context.Background(), name, tracks, legacyName); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if creates != 0 || updates != 2 || storedName != name {
+		t.Fatalf("legacy migration created a duplicate or lost its name: creates=%d updates=%d", creates, updates)
+	}
+}
+
 func TestPublishDoesNotMutateWhenAnyTrackIsNotIndexed(t *testing.T) {
 	mutations := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

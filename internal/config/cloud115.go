@@ -132,8 +132,8 @@ func (c *Config) validateCloud115(baseDir string) error {
 		}
 	}
 	if cloud.NavidromeEnabled && cloud.NavidromePlaylistSync {
-		if !cloud.Enabled {
-			return errors.New("Navidrome playlist sync requires enabled 115 storage")
+		if cloud.Timeout.Duration < time.Second || cloud.Timeout.Duration > time.Minute {
+			return errors.New("Navidrome playlist sync timeout must be between 1s and 1m")
 		}
 		if navidromeURL.Scheme == "http" && !strings.EqualFold(navidromeURL.Hostname(), "localhost") && !net.ParseIP(navidromeURL.Hostname()).IsLoopback() {
 			return errors.New("Navidrome playlist sync requires HTTPS for non-loopback URLs")

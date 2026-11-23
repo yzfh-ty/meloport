@@ -44,7 +44,7 @@ cloud115:
   enabled: false
   media_enabled: false
   navidrome_enabled: false
-  navidrome_playlist_sync: false
+  navidrome_playlist_sync: false # Publish playlist/ranking subscriptions from local music or 115; no cloud requirement.
   client_id: "100197303" # MELOPORT_115_CLIENT_ID takes precedence.
   access_token_env: MELOPORT_115_ACCESS_TOKEN # Legacy token variable alias; never store the token here.
   # target_cid: "123456" # Dedicated non-root 115 directory that CD2 uploads into.
@@ -55,7 +55,7 @@ cloud115:
   poll_interval: 1m # MELOPORT_115_POLL_INTERVAL takes precedence.
   timeout: 15s # MELOPORT_115_TIMEOUT takes precedence.
   # navidrome_url: "http://127.0.0.1:4533"
-  # navidrome_mount_root: "/music/115" # Target directory as seen by the music server.
+  # navidrome_mount_root: "/music" # storage.music_dir as seen by Navidrome; with 115, use its mounted target root.
   # navidrome_username: "meloport" # MELOPORT_NAVIDROME_USERNAME takes precedence.
   # navidrome_password_env: MELOPORT_NAVIDROME_PASSWORD # Legacy password variable alias; environment only.
 

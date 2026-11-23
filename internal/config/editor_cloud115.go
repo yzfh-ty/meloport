@@ -55,7 +55,7 @@ func (c Cloud115) SameRuntime(other Cloud115) bool {
 		if c.NavidromeURL != other.NavidromeURL || c.NavidromeMountRoot != other.NavidromeMountRoot || c.NavidromePlaylistSync != other.NavidromePlaylistSync {
 			return false
 		}
-		if c.NavidromePlaylistSync && (c.NavidromeUsername != other.NavidromeUsername || c.NavidromePasswordEnv != other.NavidromePasswordEnv) {
+		if c.NavidromePlaylistSync && (c.NavidromeUsername != other.NavidromeUsername || c.NavidromePasswordEnv != other.NavidromePasswordEnv || c.Timeout != other.Timeout) {
 			return false
 		}
 	}

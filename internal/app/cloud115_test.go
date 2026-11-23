@@ -207,7 +207,7 @@ func TestCloudRuntimeOnlyActivatesExplicitNavidromeProxy(t *testing.T) {
 	t.Cleanup(upstream.Close)
 	cfg := config.Cloud115{NavidromeURL: upstream.URL, NavidromeMountRoot: "/music"}
 	runtime := newCloudRuntime(cfg, nil, nil)
-	if runtime.handler != nil || runtime.sync != nil || runtime.login != nil || runtime.navidrome != nil {
+	if runtime.handler != nil || runtime.sync != nil || runtime.login != nil {
 		t.Fatal("saved endpoints must not activate disabled integrations")
 	}
 	cfg.MediaEnabled = true
@@ -224,8 +224,8 @@ func TestCloudRuntimeOnlyActivatesExplicitNavidromeProxy(t *testing.T) {
 	if response.Code != http.StatusOK || response.Body.String() != "Navidrome fixture" || requests.Load() != 1 {
 		t.Fatal("an explicitly enabled Navidrome should work without 115")
 	}
-	if runtime.sync != nil || runtime.login != nil || runtime.navidrome != nil {
-		t.Fatal("a standalone Navidrome proxy must not activate cloud handoff or playlist publication")
+	if runtime.sync != nil || runtime.login != nil {
+		t.Fatal("a standalone Navidrome proxy must not activate cloud handoff")
 	}
 }
 

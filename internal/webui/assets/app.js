@@ -1515,11 +1515,6 @@ document.addEventListener('DOMContentLoaded', () => {
       $('cloud-target-cid').focus();
       return;
     }
-    if (!settings.enabled && settings.navidrome_enabled && settings.navidrome_playlist_sync) {
-      cloudFeedback('cloud-settings-error', '请先在「Navidrome」页面关闭榜单歌单同步，再关闭 115 交接。');
-      $('cloud-enabled').focus();
-      return;
-    }
     cloudAction($('cloud-save'), 'save', '正在保存', async () => {
       const result = await request(`${cloudPath}/settings`, { method: 'PUT', body: settings });
       state.cloud.data = { ...state.cloud.data, settings, restart_required: result.restart_required };
@@ -1542,11 +1537,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const missing = $(settings.navidrome_url ? 'navidrome-mount-root' : 'navidrome-url');
       cloudFeedback('navidrome-settings-error', '请同时填写 Navidrome 服务地址与音乐目录。');
       missing.focus();
-      return;
-    }
-    if (settings.navidrome_enabled && settings.navidrome_playlist_sync && !settings.enabled) {
-      cloudFeedback('navidrome-settings-error', '请先在「115 与 STRM」页面启用并保存网盘交接，再开启榜单歌单同步。');
-      $('navidrome-playlist-sync').focus();
       return;
     }
     cloudAction($('navidrome-save'), 'save', '正在保存', async () => {

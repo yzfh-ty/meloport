@@ -899,10 +899,11 @@
                   <fieldset id="navidrome-integration-fields" disabled>
                     <div class="form-grid">
                       <div class="field"><label for="navidrome-url">Navidrome 服务地址</label><input id="navidrome-url" name="navidrome_url" type="url" maxlength="2048" placeholder="http://127.0.0.1:4533" /></div>
-                      <div class="field"><label for="navidrome-mount-root">Navidrome 中的音乐目录</label><input id="navidrome-mount-root" name="navidrome_mount_root" type="text" maxlength="4096" placeholder="/music" /></div>
+                      <div class="field"><label for="navidrome-mount-root">Navidrome 中的音乐目录</label><input id="navidrome-mount-root" name="navidrome_mount_root" type="text" maxlength="4096" placeholder="/music" aria-describedby="navidrome-root-hint" /></div>
                     </div>
+                    <p id="navidrome-root-hint" class="field-hint">本地模式对应下载根目录在 Navidrome 中的路径；115 模式对应 CD2 挂载的目标目录。</p>
                     <p class="field-hint">让 Navidrome 扫描本地音频；使用 115 时扫描 CD2 挂载的真实音频。302 直链播放需启用 Report Real Path，并关闭服务端转码和限码率。</p>
-                    <label class="checkbox-field" for="navidrome-playlist-sync"><input id="navidrome-playlist-sync" name="navidrome_playlist_sync" type="checkbox" /><span><strong>同步创建 Navidrome 榜单歌单</strong><small>默认关闭，需在「115 与 STRM」启用网盘交接并在服务端配置同步账号。Navidrome 扫描完成后，再创建或更新榜单歌单。</small></span></label>
+                    <label class="checkbox-field" for="navidrome-playlist-sync"><input id="navidrome-playlist-sync" name="navidrome_playlist_sync" type="checkbox" /><span><strong>同步创建 Navidrome 歌单</strong><small>将订阅歌单和排行榜同步到 Navidrome，本地音乐也可使用。配置同步账号后，歌曲入库即可在下次任务同步时创建或更新。</small></span></label>
                   </fieldset>
 
                   <div class="integration-section">

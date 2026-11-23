@@ -33,6 +33,11 @@ func TestSettingsMusicDirectoryPersistsScopedValueAndRecalculatesTasks(t *testin
 	if cfg.Storage.MusicDirConfigured != newRoot || cfg.Storage.MusicDir != resolved || cfg.Tasks[0].Directory != filepath.Join(resolved, "original-folder") || cfg.Tasks[1].Directory != filepath.Join(resolved, "second") || cfg.Tasks[2].Directory != absoluteDirectory {
 		t.Fatalf("wrong download root/task recalculation: storage=%+v tasks=%+v", cfg.Storage, cfg.Tasks)
 	}
+	for _, task := range cfg.Tasks {
+		if task.Model().MusicRoot != resolved {
+			t.Fatal("a storage edit left the Navidrome task mapping on the old download root")
+		}
+	}
 	reloaded, err := Load(path)
 	if err != nil || reloaded.Storage.MusicDirConfigured != newRoot || reloaded.Storage.MusicDir != resolved || reloaded.Tasks[0].Directory != cfg.Tasks[0].Directory {
 		t.Fatalf("download root did not survive reload: %+v %v", reloaded, err)
