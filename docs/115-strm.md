@@ -60,6 +60,8 @@ Meloport 默认只把订阅歌曲下载到本地并补齐音频标签。115 交�
 
 播放器请求该地址时，Meloport 按请求的 User-Agent 获取 115 临时直链并返回 HTTP `302`。反代应保留 User-Agent，并将 302 返回给播放器。如果配置了地址路径前缀，反代应去掉前缀后再转发。持有 STRM 链接即可请求对应音频，请保护导出目录，并在反代访问日志中隐藏媒体路径。关闭独立媒体端口后，已生成的 STRM 会保留，但需重新开启端口才能通过 Meloport 播放。
 
+这里有两个不同方向的代理：对外的 HTTPS 反向代理将播放器请求转发到 Meloport 媒体端口；可选的 Navidrome 代理则由 Meloport 转发客户端请求到 Navidrome。STRM 播放使用自身的稳定媒体链接，不要求开启 Navidrome 代理，但需要完成 115 授权和远端文件核对。Navidrome 客户端访问代理入口时使用的是 Navidrome 的音乐接口，并非让 Navidrome 读取 STRM。
+
 **Navidrome** 可以单独接入本地下载模式，也可以搭配 115。Navidrome 扫描本地音乐目录，或 CloudDrive2 挂载的 **115 真实音频目录**，`.strm` 文件供支持该格式的其他播放器使用。
 
 1. 打开侧边栏的「Navidrome」菜单，分别开启「Navidrome 接入」和「独立媒体端口」。填写播放器地址、`navidrome_url`，以及 Navidrome 运行环境看到的音乐目录绝对路径 `navidrome_mount_root`。保存后重启。

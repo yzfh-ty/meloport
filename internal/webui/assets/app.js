@@ -1516,8 +1516,8 @@ document.addEventListener('DOMContentLoaded', () => {
     show('navidrome-restart', data.restart_required);
     text('navidrome-settings-note', state.navidrome.dirty ? '有未保存的更改。' : '设置保存后，在下次启动时生效。');
     text('navidrome-media-runtime', data.media_runtime_enabled
-      ? '媒体端口已启动。更改媒体入口或 Navidrome 接入后，需重启服务。'
-      : '媒体端口未启动。STRM 播放和 Navidrome 接入需开启后重启服务。');
+      ? '播放入口已启动。更改此处设置后，需重启服务生效。'
+      : '播放入口未启动。开启并保存后，重启服务生效。');
   }
 
   function renderCloudFiles() {

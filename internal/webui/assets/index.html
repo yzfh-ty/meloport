@@ -912,13 +912,13 @@
                     <h3>媒体入口</h3>
                     <label class="checkbox-field cloud-enable" for="navidrome-media-enabled">
                       <input id="navidrome-media-enabled" name="media_enabled" type="checkbox" />
-                      <span><strong>启用独立媒体端口</strong><small>STRM 播放和 Navidrome 反代共用此入口。只播放 STRM 时，开启此项即可。</small></span>
+                      <span><strong>启用独立媒体端口</strong><small>提供 STRM 播放入口，播放时跳转到 115 直链。启用上方 Navidrome 接入后，客户端也通过此端口访问。</small></span>
                     </label>
                     <fieldset id="navidrome-media-fields" disabled>
                       <div class="field">
                         <label for="navidrome-media-base-url">播放器访问地址</label>
                         <input id="navidrome-media-base-url" name="media_base_url" type="url" maxlength="2048" placeholder="http://127.0.0.1:8081" aria-describedby="navidrome-media-hint" />
-                        <p id="navidrome-media-hint" class="field-hint">STRM 会写入此地址。跨设备请填写播放器能访问的 HTTPS 反代地址。</p>
+                        <p id="navidrome-media-hint" class="field-hint">此地址用于生成 STRM 播放链接，必须能被播放器访问。使用 HTTPS 反向代理时，填写代理的对外地址。</p>
                       </div>
                     </fieldset>
                     <p id="navidrome-media-runtime" class="field-hint" role="status">媒体端口未启动。</p>
