@@ -43,6 +43,8 @@ Remove-Variable secureKey
 
 网页保存任务和「系统设置」后会更新当前服务。手动编辑 YAML 或保存「115 与 STRM」设置后，需要重启服务。配置内的相对路径从配置文件所在目录解析，任务的相对保存路径以下载根目录为准。可参考 [配置示例](config.example.yaml) 并检查修改结果。
 
+系统设置页保留填写的目录值，说明文案使用通用描述，不额外显示服务端展开后的绝对路径。
+
 ```powershell
 .\bin\meloport.exe validate -config config.yaml
 ```

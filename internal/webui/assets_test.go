@@ -103,15 +103,15 @@ func TestLiveAssetDirectoryOverridesEmbeddedFiles(t *testing.T) {
 	}
 }
 
-func TestSettingsExposePathTextAndReadableScheduleControls(t *testing.T) {
+func TestSettingsKeepEditableDirectoriesAndReadableScheduleControls(t *testing.T) {
 	handler := Handler()
 	for _, item := range []struct {
 		path     string
 		required []string
 		absent   []string
 	}{
-		{"/", []string{`id="settings-music-dir"`, `name="music_dir" type="text"`, `Docker 部署时填写容器内已挂载的路径`, `可能重新下载`, `id="settings-schedule-time"`, `id="task-schedule-weekday"`, `id="task-schedule-interval"`}, []string{`浏览目录`, `directory-dialog`, `webkitdirectory`, `type="file"`, `五字段`, `placeholder="0 3 * * *"`}},
-		{"/assets/app.js", []string{`scheduleUI.describe`, `已有自定义计划，保持不变`, `music_dir:`, `readSchedule('settings')`, `readSchedule('task')`}, []string{`/api/directories`, `loadDirectories`, `openDirectoryPicker`, `state.directories`, `validCron`}},
+		{"/", []string{`id="settings-music-dir"`, `name="music_dir" type="text"`, `id="settings-music-dir-hint"`, `id="settings-schedule-time"`, `id="task-schedule-weekday"`, `id="task-schedule-interval"`}, []string{`settings-music-dir-resolved`, `当前实际目录`, `浏览目录`, `directory-dialog`, `webkitdirectory`, `type="file"`, `五字段`, `placeholder="0 3 * * *"`}},
+		{"/assets/app.js", []string{`scheduleUI.describe`, `已有自定义计划，保持不变`, `music_dir:`, `readSchedule('settings')`, `readSchedule('task')`}, []string{`music_dir_resolved`, `/api/directories`, `loadDirectories`, `openDirectoryPicker`, `state.directories`, `validCron`}},
 	} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, item.path, nil))

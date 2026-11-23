@@ -962,7 +962,7 @@
                 <div class="panel-heading">
                   <div>
                     <h2 id="defaults-title">默认同步规则</h2>
-                    <p>未单独配置的任务将继承这些设置。</p>
+                    <p>任务可单独覆盖。</p>
                   </div>
                 </div>
                 <form id="settings-form" class="padded-form" novalidate>
@@ -973,7 +973,7 @@
                     tabindex="-1"
                     hidden
                   ></div>
-                  <fieldset id="settings-fields" disabled>
+                  <fieldset id="settings-fields" class="settings-grid" disabled>
                     <div class="field">
                       <label for="settings-timezone">时区</label
                       ><input
@@ -990,7 +990,7 @@
                         hidden
                       ></span>
                       <p class="field-hint">
-                        使用 IANA 时区名称，例如 Asia/Shanghai 或 UTC。
+                        使用 IANA 时区名称。
                       </p>
                     </div>
                     <div class="field schedule-field" id="settings-schedule-editor">
@@ -1006,11 +1006,9 @@
                     </div>
                     <div class="field">
                       <label for="settings-music-dir">下载根目录</label>
-                      <input id="settings-music-dir" name="music_dir" type="text" required maxlength="4096" placeholder="填写运行环境中的音乐保存路径" aria-describedby="settings-music-dir-error settings-music-dir-hint settings-music-dir-resolved" />
+                      <input id="settings-music-dir" name="music_dir" type="text" required maxlength="4096" placeholder="填写服务端音乐保存路径" aria-describedby="settings-music-dir-error settings-music-dir-hint" />
                       <span id="settings-music-dir-error" class="field-error" hidden></span>
-                      <p id="settings-music-dir-resolved" class="field-hint path-hint"></p>
-                      <p id="settings-music-dir-hint" class="field-hint">填写 Meloport 运行环境中的路径；Docker 部署时填写容器内已挂载的路径，不是浏览器设备的目录。</p>
-                      <p class="field-hint">更改目录不会移动或删除已有音乐；下次同步会在新目录补齐歌曲，可能重新下载。</p>
+                      <p id="settings-music-dir-hint" class="field-hint">填写服务端保存路径；已有音频会保留。</p>
                     </div>
                     <div class="field">
                       <label for="settings-quality">默认音质</label
@@ -1028,30 +1026,23 @@
                         <option value="sky">沉浸声 · sky</option>
                       </select>
                       <p class="field-hint">
-                        按平台映射相应音质，不会重新下载已完整保存的文件。
+                        按平台选择音质，完整文件保持原样。
                       </p>
+                    </div>
+                    <div class="settings-options">
                       <label class="checkbox-field" for="settings-auto-downgrade">
                         <input id="settings-auto-downgrade" name="auto_downgrade" type="checkbox" />
-                        <span><strong>音质不可用时自动降级</strong><small>只在接口明确提示音质不可用时尝试较低档；账号、额度和网络错误不会重试。</small></span>
+                        <span><strong>音质不可用时自动降级</strong><small>仅在所选音质不可用时尝试较低音质。</small></span>
+                      </label>
+                      <label class="checkbox-field" for="settings-fallback">
+                        <input id="settings-fallback" name="fallback_to_api" type="checkbox" />
+                        <span><strong>直连失败时允许 ChKSz 回退</strong><small>回退会消耗额度，仅限支持的接口。</small></span>
                       </label>
                     </div>
-                    <label class="checkbox-field" for="settings-fallback"
-                      ><input
-                        id="settings-fallback"
-                        name="fallback_to_api"
-                        type="checkbox"
-                      /><span
-                        ><strong>直连失败时允许 ChKSz 回退</strong
-                        ><small
-                          >仅在 ChKSz
-                          提供对应接口时回退；音频地址仍通过解析接口获取。</small
-                        ></span
-                      ></label
-                    >
                   </fieldset>
                   <div class="form-footer">
                     <span id="settings-dirty" class="field-hint"
-                      >所有设置均保存在本机。</span
+                      >保存后应用于后续同步。</span
                     ><button
                       id="settings-submit"
                       class="button button-primary"
@@ -1063,12 +1054,6 @@
                   </div>
                 </form>
               </section>
-              <div class="quiet-note">
-                <svg class="icon" aria-hidden="true">
-                  <use href="#icon-folder" />
-                </svg>
-                <p>只做增量同步。移除订阅不会删除已下载的音频文件。</p>
-              </div>
             </div>
           </section>
         </main>

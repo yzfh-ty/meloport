@@ -33,16 +33,22 @@ func TestWebMusicDirectorySettingsPersistAndPendingTasksUseNewRoot(t *testing.T)
 	webStatus(t, webRequest(t, f, http.MethodPut, "/api/settings", musicSettings(&root)), http.StatusOK)
 	resolved := filepath.Join(filepath.Dir(f.path), "downloads", "library")
 	var overview struct {
-		MusicDir         string `json:"music_dir"`
-		MusicDirResolved string `json:"music_dir_resolved"`
+		MusicDir string `json:"music_dir"`
 	}
 	w := webRequest(t, f, http.MethodGet, "/api/overview", nil)
 	webStatus(t, w, http.StatusOK)
 	if err := json.Unmarshal(w.Body.Bytes(), &overview); err != nil {
 		t.Fatal(err)
 	}
-	if overview.MusicDir != root || overview.MusicDirResolved != resolved {
-		t.Fatalf("overview did not expose configured/resolved roots: %+v", overview)
+	if overview.MusicDir != root {
+		t.Fatalf("overview did not preserve the editable configured root: %+v", overview)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &fields); err != nil {
+		t.Fatal(err)
+	}
+	if _, exposed := fields["music_dir_resolved"]; exposed {
+		t.Fatal("overview exposed the derived server directory")
 	}
 	cfg, err := config.Load(f.path)
 	if err != nil || cfg.Storage.MusicDirConfigured != root || cfg.Storage.MusicDir != resolved || cfg.Tasks[0].Directory != filepath.Join(resolved, "queued") {

@@ -566,7 +566,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       try {
         const description = scheduleUI.describe(scheduleUI.encode(scheduleModel(prefix)));
-        text(`${prefix}-schedule-hint`, `${description}，按${prefix === 'settings' ? '上方' : '系统设置中的'}时区运行。${mode === 'hours' ? '从每天 00:00 起计算。' : mode === 'minutes' ? '从每小时第 0 分钟起计算。' : ''}`);
+        text(`${prefix}-schedule-hint`, `${description}，按${prefix === 'settings' ? '设置的' : '系统设置中的'}时区运行。${mode === 'hours' ? '从每天 00:00 起计算。' : mode === 'minutes' ? '从每小时第 0 分钟起计算。' : ''}`);
       } catch { text(`${prefix}-schedule-hint`, '请选择完整的同步计划。'); }
     }
   }
@@ -813,8 +813,8 @@ document.addEventListener('DOMContentLoaded', () => {
     state.settingsDirty = true;
     text('settings-dirty', '有未保存的更改。');
     const saved = state.overview;
-    if (saved && $('settings-music-dir').value.trim() !== (saved.music_dir || '')) text('settings-music-dir-resolved', '保存后将在新目录补齐歌曲；当前草稿尚未生效。');
-    else if (saved) text('settings-music-dir-resolved', saved.music_dir_resolved ? `当前实际目录：${saved.music_dir_resolved}` : '');
+    const directoryChanged = saved && $('settings-music-dir').value.trim() !== (saved.music_dir || '');
+    text('settings-music-dir-hint', directoryChanged ? '目录已修改，保存后用于后续同步。' : '填写服务端保存路径；已有音频会保留。');
   }
 
   function renderSettings(force = false) {
@@ -826,7 +826,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('settings-timezone').value = data.timezone || '';
     setSchedule('settings', data.schedule || '');
     $('settings-music-dir').value = data.music_dir || '';
-    text('settings-music-dir-resolved', data.music_dir_resolved ? `当前实际目录：${data.music_dir_resolved}` : '');
+    text('settings-music-dir-hint', '填写服务端保存路径；已有音频会保留。');
     $('settings-quality').value = data.quality || 'lossless';
     $('settings-auto-downgrade').checked = Boolean(data.auto_downgrade);
     $('settings-fallback').checked = Boolean(data.fallback_to_api);
@@ -850,11 +850,11 @@ document.addEventListener('DOMContentLoaded', () => {
         $('settings-fields').disabled = true;
         await request('/api/settings', { method: 'PUT', body: input });
         const previous = state.overview;
-        if (previous) state.overview = { ...previous, ...input, music_dir_resolved: previous.music_dir === input.music_dir ? previous.music_dir_resolved : '' };
+        if (previous) state.overview = { ...previous, ...input };
         state.settingsDirty = false;
         await refreshOverview({ force: true });
         renderSettings(true);
-        text('settings-dirty', '设置已保存到本机。');
+        text('settings-dirty', '设置已保存。');
         toast('下载目录与默认规则已更新');
       });
     } catch (error) { formErrors('settings', [{ message: error.message }]); }

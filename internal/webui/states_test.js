@@ -5,6 +5,35 @@ const test = require('node:test');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, 'assets/app.js'), 'utf8');
 
+test('settings hints omit resolved server directories while preserving editable values and drafts', () => {
+  const privateDirectory = '/private/server-only/library';
+  const nodes = new Map();
+  const node = id => {
+    if (!nodes.has(id)) nodes.set(id, { value: '', textContent: '' });
+    return nodes.get(id);
+  };
+  const state = {
+    overview: { music_dir: 'library', music_dir_resolved: privateDirectory, timezone: 'UTC', schedule: '0 3 * * *', quality: 'hires', api_key_configured: false },
+    settingsDirty: false, busy: new Set(),
+  };
+  const context = { state, $: node, text: (id, value) => { node(id).textContent = value; }, setSchedule() {} };
+  vm.createContext(context);
+  vm.runInContext(source.slice(source.indexOf('  function markSettingsDirty('), source.indexOf('  async function saveSettings(')) + '\nthis.render = renderSettings; this.mark = markSettingsDirty;', context);
+  context.render();
+  assert.equal(node('settings-music-dir').value, 'library');
+  assert.equal(node('settings-timezone').value, 'UTC');
+  assert.equal(node('settings-quality').value, 'hires');
+  node('settings-music-dir').value = 'library-draft';
+  context.mark();
+  context.render();
+  assert.equal(node('settings-music-dir').value, 'library-draft');
+  assert.match(node('settings-music-dir-hint').textContent, /保存后/);
+  context.render(true);
+  assert.equal(node('settings-music-dir').value, 'library');
+  assert.match(node('settings-music-dir-hint').textContent, /已有音频会保留/);
+  for (const value of nodes.values()) assert.ok(!value.textContent.includes(privateDirectory));
+});
+
 test('subscription creation messages distinguish downloads queued from subscriptions only saved', () => {
   const nodes = { 'task-enabled': { checked: true }, 'task-submit': {}, 'task-enabled-hint': {} };
   const context = { state: { editTask: null }, $: id => nodes[id], text: (id, value) => { nodes[id].textContent = value; } };

@@ -241,7 +241,6 @@ fieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
 .schedule-detail > label { color: var(--muted); font-size: .8125rem; }
 .schedule-controls > select:has(~ .schedule-detail:not([hidden])) { margin-top: 24px; }
 .form-grid > .schedule-field { grid-column: 1 / -1; }
-.path-hint { overflow-wrap: anywhere; }
 
 /* Search, history and settings */
 .search-panel, .padded-form { padding: var(--panel-pad); }
@@ -310,9 +309,21 @@ fieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
 .audio-actions { text-align: right; }
 .audio-no-action { color: var(--subtle); }
 
-.settings-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.settings-layout { display: grid; grid-template-columns: minmax(0, 1fr); }
 .settings-layout > .panel { margin-bottom: 0; }
-.settings-panel .panel-heading { border-bottom: 1px solid var(--line); }
+.settings-panel .panel-heading { padding-block: 13px; border-bottom: 1px solid var(--line); }
+.settings-panel .panel-heading > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.settings-panel .panel-heading p { margin-top: 0; }
+.settings-panel .padded-form { padding-block: 18px; }
+.settings-grid, .settings-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; }
+.settings-grid > .field { margin-bottom: 0; }
+.settings-options { grid-column: 1 / -1; }
+.settings-options .checkbox-field { margin-top: 0; }
+.settings-panel .form-footer { margin-top: 16px; padding-top: 14px; }
+.settings-panel .schedule-controls { align-items: flex-end; gap: 8px; }
+.settings-panel .schedule-controls > select { flex-basis: 150px; }
+.settings-panel .schedule-detail { flex-basis: 100px; }
+.settings-panel .schedule-controls > select:has(~ .schedule-detail:not([hidden])) { margin-top: 0; }
 .checkbox-field { display: flex; align-items: flex-start; gap: 9px; margin-top: 8px; cursor: pointer; }
 .checkbox-field input { width: 18px; height: 18px; min-height: 18px; flex: none; margin: 2px 0; accent-color: var(--accent); cursor: pointer; }
 .checkbox-field strong { display: block; font-size: .875rem; font-weight: 650; }
@@ -381,9 +392,6 @@ fieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
   .cloud-table .cloud-file-task { display: block; }
 }
 .cloud-file-task { display: none; }
-.quiet-note { color: var(--muted); font-size: .8125rem; }
-.quiet-note { display: flex; gap: 8px; padding-inline: 2px; }
-.quiet-note .icon { width: 17px; height: 17px; color: var(--accent); }
 
 /* Dialogs */
 .workspace-footer { display: flex; justify-content: space-between; gap: 10px; padding-block: 12px 22px; color: var(--subtle); font-size: .8125rem; }
@@ -493,6 +501,12 @@ fieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
   .ranking-row-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ranking-error { align-items: flex-start; flex-direction: column; }
   .ranking-error .button { align-self: flex-end; }
+  .settings-grid, .settings-options { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .settings-panel .padded-form { padding-block: 15px; }
+  .settings-panel .schedule-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settings-panel .schedule-controls > select, .settings-panel .schedule-detail { width: 100%; }
+  .settings-panel .schedule-controls:not(:has(.schedule-detail:not([hidden]))) > select { grid-column: 1 / -1; }
+  .settings-panel .schedule-controls:has(#settings-schedule-weekday-field:not([hidden])) > select { grid-column: 1 / -1; }
 }
 
 @container (max-width: 720px) {
