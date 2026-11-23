@@ -38,7 +38,6 @@ type SettingsInput struct {
 	Schedule      string  `json:"schedule"`
 	Quality       string  `json:"quality"`
 	AutoDowngrade bool    `json:"auto_downgrade"`
-	FallbackToAPI bool    `json:"fallback_to_api"`
 	MusicDir      *string `json:"music_dir,omitempty"`
 }
 
@@ -179,15 +178,9 @@ func (e *Editor) Settings(input SettingsInput) (*Config, error) {
 		setScalar(root, "schedule", input.Schedule, "!!str")
 		setScalar(root, "quality", input.Quality, "!!str")
 		setScalar(root, "auto_downgrade", boolText(input.AutoDowngrade), "!!bool")
-		metadata := mappingField(root, "metadata")
-		if metadata == nil {
-			if existing := field(root, "metadata"); existing != nil && existing.Tag != "!!null" {
-				return errors.New("metadata must be a plain YAML mapping")
-			}
-			metadata = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
-			setNode(root, "metadata", metadata)
+		if metadata := mappingField(root, "metadata"); metadata != nil {
+			deleteField(metadata, "fallback_to_api")
 		}
-		setScalar(metadata, "fallback_to_api", boolText(input.FallbackToAPI), "!!bool")
 		return nil
 	})
 }

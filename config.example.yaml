@@ -16,7 +16,6 @@ api:
 metadata:
   timeout: 30s
   min_interval: 1s
-  fallback_to_api: true # Only after native failure, and only for documented endpoints.
   netease_cookie_env: MELOPORT_NETEASE_COOKIE
   qq_cookie_env: MELOPORT_QQ_COOKIE
   kugou_cookie_env: MELOPORT_KUGOU_COOKIE

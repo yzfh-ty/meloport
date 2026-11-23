@@ -35,7 +35,7 @@ Remove-Variable secureKey
 .\bin\meloport.exe serve -config config.yaml
 ```
 
-歌单、搜索和元数据优先直连音乐平台。开启「直连失败时允许 ChKSz 回退」后，支持回退的元数据请求会使用 ChKSz 额度。需要平台登录时，可通过配置示例中对应的环境变量提供 Cookie。实际 Key 只放进程环境或本地配置，Cookie 只放进程环境；管理接口不返回密钥。
+歌单、搜索和元数据直接从音乐平台获取，失败时显示错误，不再回退到 ChKSz。ChKSz 仅用于缺失音频的解析及下载前必需的音频标识匹配。需要平台登录时，可通过配置示例中对应的环境变量提供 Cookie。实际 Key 只放进程环境或本地配置，Cookie 只放进程环境；管理接口不返回密钥。旧配置中的 `metadata.fallback_to_api` 不再生效，网页保存系统设置时会删除该字段。
 
 ## 保存配置与管理音频
 

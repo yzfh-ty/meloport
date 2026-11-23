@@ -300,7 +300,7 @@ func TestLazyMissingThenConfiguredKey(t *testing.T) {
 	defer server.Close()
 	lazy := NewLazy(Options{BaseURL: server.URL}, envName)
 	for _, call := range []func() error{
-		func() error { _, err := lazy.Playlist(context.Background(), "123"); return err },
+		func() error { _, err := lazy.fixturePlaylist(context.Background(), "123"); return err },
 		func() error { _, err := lazy.Search(context.Background(), "qq", "query", 20, 0); return err },
 		func() error { _, err := lazy.ResolvePlatform(context.Background(), "qq", "003MID", ""); return err },
 	} {
@@ -324,7 +324,7 @@ func TestLazyMissingThenConfiguredKey(t *testing.T) {
 		t.Fatal("invalid key sent upstream requests")
 	}
 	t.Setenv(envName, testKey)
-	if _, err := lazy.Playlist(context.Background(), "123"); err != nil {
+	if _, err := lazy.fixturePlaylist(context.Background(), "123"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := lazy.Search(context.Background(), "qq", "query", 20, 0); err != nil {

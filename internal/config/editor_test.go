@@ -286,11 +286,11 @@ func TestEditorInvalidCandidateLeavesOriginalExact(t *testing.T) {
 
 func TestEditorSettingsPreserveTaskInheritanceAndSecretsConfiguration(t *testing.T) {
 	path, editor := editorFixture(t, editorExample)
-	cfg, err := editor.Settings(SettingsInput{Timezone: "UTC", Schedule: "15 4 * * *", Quality: "hires", FallbackToAPI: false})
+	cfg, err := editor.Settings(SettingsInput{Timezone: "UTC", Schedule: "15 4 * * *", Quality: "hires"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Timezone != "UTC" || cfg.Schedule != "15 4 * * *" || cfg.Quality != "hires" || cfg.Metadata.FallbackToAPI || cfg.API.KeyEnv != "MY_CHKSZ_KEY" || cfg.Metadata.QQCookieEnv != "MY_QQ_COOKIE" {
+	if cfg.Timezone != "UTC" || cfg.Schedule != "15 4 * * *" || cfg.Quality != "hires" || cfg.API.KeyEnv != "MY_CHKSZ_KEY" || cfg.Metadata.QQCookieEnv != "MY_QQ_COOKIE" {
 		t.Fatalf("wrong settings result: %+v", cfg)
 	}
 	if cfg.Tasks[0].Schedule != "15 4 * * *" || cfg.Tasks[0].Quality != "hires" || cfg.Tasks[1].Schedule != "0 20 * * *" || cfg.Tasks[1].Quality != "flac" {
@@ -304,7 +304,7 @@ func TestEditorSettingsPreserveTaskInheritanceAndSecretsConfiguration(t *testing
 		t.Fatal("effective defaults were persisted to task")
 	}
 	raw := editorBytes(t, path)
-	if !bytes.Contains(raw, []byte("fallback_to_api: false")) || !bytes.Contains(raw, []byte("timeout: 35s")) {
+	if bytes.Contains(raw, []byte("fallback_to_api")) || !bytes.Contains(raw, []byte("timeout: 35s")) {
 		t.Fatal("metadata settings lost")
 	}
 	_, err = editor.Settings(SettingsInput{Timezone: "invalid_timezone", Schedule: "0 3 * * *", Quality: "lossless"})
@@ -322,7 +322,7 @@ func TestEditorExternalEditConflict(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	_, err := editor.Settings(SettingsInput{Timezone: "UTC", Schedule: "0 4 * * *", Quality: "lossless", FallbackToAPI: true})
+	_, err := editor.Settings(SettingsInput{Timezone: "UTC", Schedule: "0 4 * * *", Quality: "lossless"})
 	if !errors.Is(err, ErrConflict) {
 		t.Fatalf("external edit not detected: %v", err)
 	}

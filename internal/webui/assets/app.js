@@ -705,7 +705,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const reported = typeof playlist.reported_count === 'number' ? playlist.reported_count : tracks.length;
       text('preview-title', playlist.name || `${task.source_type === 'ranking' ? '排行榜预览' : '歌单预览'} · ${task.id}`);
       text('preview-summary', `${platforms[task.platform] || task.platform} · 共 ${number(reported)} 首歌曲`);
-      const source = playlist.fetched_via === 'chksz_fallback' ? ['ChKSz 回退', 'warning'] : playlist.fetched_via === 'native' ? ['平台直连', 'success'] : ['来源未返回', 'neutral'];
+      const source = playlist.fetched_via === 'native' ? ['平台直连', 'success'] : ['来源未返回', 'neutral'];
       text('preview-source', source[0]);
       $('preview-source').className = `status-badge status-${source[1]}`;
       const rows = tracks.slice(0, 20).map((track) => {
@@ -829,7 +829,6 @@ document.addEventListener('DOMContentLoaded', () => {
     text('settings-music-dir-hint', '填写服务端保存路径；已有音频会保留。');
     $('settings-quality').value = data.quality || 'lossless';
     $('settings-auto-downgrade').checked = Boolean(data.auto_downgrade);
-    $('settings-fallback').checked = Boolean(data.fallback_to_api);
     $('settings-fields').disabled = state.busy.has('settings');
     $('settings-submit').disabled = state.busy.has('settings');
   }
@@ -838,7 +837,7 @@ document.addEventListener('DOMContentLoaded', () => {
     event.preventDefault();
     if (state.busy.has('settings')) return;
     clearErrors('settings');
-    const input = { timezone: $('settings-timezone').value.trim(), schedule: '', music_dir: $('settings-music-dir').value.trim(), quality: $('settings-quality').value, auto_downgrade: $('settings-auto-downgrade').checked, fallback_to_api: $('settings-fallback').checked };
+    const input = { timezone: $('settings-timezone').value.trim(), schedule: '', music_dir: $('settings-music-dir').value.trim(), quality: $('settings-quality').value, auto_downgrade: $('settings-auto-downgrade').checked };
     const errors = [];
     if (!input.timezone) errors.push({ field: 'settings-timezone', message: '请填写 IANA 时区名称。' });
     if (!input.music_dir) errors.push({ field: 'settings-music-dir', message: '请填写下载根目录。' });
@@ -927,8 +926,8 @@ document.addEventListener('DOMContentLoaded', () => {
     show('search-pagination', true);
     show('search-empty', tracks.length === 0);
     show('search-results-table', tracks.length > 0);
-    if (source === 'native' || source === 'chksz_fallback') {
-      text('search-source', source === 'native' ? '平台直连' : 'ChKSz 回退');
+    if (source === 'native') {
+      text('search-source', '平台直连');
       show('search-source', true);
     }
     const rows = tracks.map((track) => {

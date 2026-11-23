@@ -49,7 +49,7 @@ func TestWebManualSubscriptionAutomaticallyDownloadsThenReusesLocalAudio(t *test
 	}))
 	t.Cleanup(server.Close)
 	origin = server.URL
-	manager := provider.New(map[string]provider.Source{"netease": f.sources["netease"]}, chksz.NewLazy(chksz.Options{BaseURL: origin}, webTestKeyEnv), false, discardServiceLogger())
+	manager := provider.New(map[string]provider.Source{"netease": f.sources["netease"]}, chksz.NewLazy(chksz.Options{BaseURL: origin}, webTestKeyEnv))
 	dl, err := download.New(download.Options{})
 	if err != nil {
 		t.Fatal(err)

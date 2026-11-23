@@ -127,7 +127,7 @@ func newWebFixture(t *testing.T, tasks ...config.TaskInput) *webFixture {
 		f.sources[source] = reader
 		readers[source] = reader
 	}
-	f.metadata = provider.New(readers, f.gateway, cfg.Metadata.FallbackToAPI, discardServiceLogger())
+	f.metadata = provider.New(readers, f.gateway)
 	f.control = newWebController(cfg, cfg.Tasks, f.queue, discardServiceLogger(), serviceOptions{ConfigPath: path, Store: store, Metadata: f.metadata})
 	if err := f.control.install(cfg, cfg.Tasks, true); err != nil {
 		store.Close()
@@ -186,7 +186,6 @@ type webOverview struct {
 	Timezone      string                                            `json:"timezone"`
 	Schedule      string                                            `json:"schedule"`
 	Quality       string                                            `json:"quality"`
-	Fallback      bool                                              `json:"fallback_to_api"`
 	KeyConfigured bool                                              `json:"api_key_configured"`
 	KeyEnv        string                                            `json:"api_key_env"`
 	Tasks         []taskView                                        `json:"tasks"`
@@ -280,10 +279,10 @@ func TestWebTaskCRUDPersistenceScheduleInheritanceAndNoAudioDeletion(t *testing.
 	if _, err := time.Parse(time.RFC3339, overview.Tasks[0].NextRun); err != nil {
 		t.Fatal("invalid next execution timestamp", err)
 	}
-	settings := config.SettingsInput{Timezone: "UTC", Schedule: "17 4 * * *", Quality: "master", FallbackToAPI: false}
+	settings := config.SettingsInput{Timezone: "UTC", Schedule: "17 4 * * *", Quality: "master"}
 	webStatus(t, webRequest(t, f, http.MethodPut, "/api/settings", settings), 200)
 	overview = webOverviewOf(t, f)
-	if overview.Timezone != "UTC" || overview.Schedule != "17 4 * * *" || overview.Fallback {
+	if overview.Timezone != "UTC" || overview.Schedule != "17 4 * * *" {
 		t.Fatal("settings were not applied")
 	}
 	if overview.Tasks[0].EffectiveSchedule != "17 4 * * *" || overview.Tasks[0].EffectiveQuality != "jymaster" || overview.Tasks[0].Schedule != "" || overview.Tasks[0].Quality != "" {
@@ -324,7 +323,28 @@ func TestWebTaskCRUDPersistenceScheduleInheritanceAndNoAudioDeletion(t *testing.
 	f.sources["netease"].fail.Store(true)
 	webStatus(t, webRequest(t, f, http.MethodGet, "/api/search?platform=netease&keyword=test", nil), 502)
 	if f.gateway.calls.Load() != 0 {
-		t.Fatal("Web fallback setting was not applied to metadata manager")
+		t.Fatal("failed native search consumed the metered gateway")
+	}
+}
+
+func TestWebNativeFailuresAreReportedWithoutPaidMetadataCalls(t *testing.T) {
+	f := newWebFixture(t)
+	f.cfg.Metadata.LegacyFallback = true // An old saved flag cannot restore the removed feature.
+	overview := webRequest(t, f, http.MethodGet, "/api/overview", nil)
+	webStatus(t, overview, http.StatusOK)
+	if strings.Contains(overview.Body.String(), "fallback_to_api") {
+		t.Fatal("overview exposed the removed setting")
+	}
+	for _, source := range []string{"netease", "qq", "kugou"} {
+		f.sources[source].fail.Store(true)
+		response := webRequest(t, f, http.MethodGet, "/api/search?platform="+source+"&keyword=test", nil)
+		webStatus(t, response, http.StatusBadGateway)
+		if !strings.Contains(response.Body.String(), "native fixture unavailable") {
+			t.Fatal("native failure cause was hidden", response.Body)
+		}
+	}
+	if f.gateway.calls.Load() != 0 {
+		t.Fatal("native metadata failure used the paid gateway")
 	}
 }
 
@@ -362,8 +382,9 @@ func TestWebInvalidEditsKeepConfigurationBytes(t *testing.T) {
 		{"invalid JSON", "POST", "/api/tasks", `{`, 400},
 		{"multiple documents", "POST", "/api/tasks", `{"id":"bad","playlist":"123"} {}`, 400},
 		{"wrong type", "POST", "/api/tasks", `{"id":123,"playlist":"123"}`, 400},
-		{"invalid settings", "PUT", "/api/settings", `{"timezone":"Bad/Timezone","schedule":"0 3 * * *","quality":"lossless","fallback_to_api":false}`, 400},
-		{"settings unknown field", "PUT", "/api/settings", `{"timezone":"UTC","schedule":"0 3 * * *","quality":"lossless","fallback_to_api":false,"api_key":"secret"}`, 400},
+		{"invalid settings", "PUT", "/api/settings", `{"timezone":"Bad/Timezone","schedule":"0 3 * * *","quality":"lossless"}`, 400},
+		{"settings unknown field", "PUT", "/api/settings", `{"timezone":"UTC","schedule":"0 3 * * *","quality":"lossless","api_key":"secret"}`, 400},
+		{"removed fallback setting", "PUT", "/api/settings", `{"timezone":"UTC","schedule":"0 3 * * *","quality":"lossless","fallback_to_api":true}`, 400},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := webRequest(t, f, tc.method, tc.path, tc.body)

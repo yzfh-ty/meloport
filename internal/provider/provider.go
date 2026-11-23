@@ -5,10 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
-	"sync/atomic"
 	"unicode"
 
 	"meloport/internal/model"
@@ -28,25 +26,18 @@ type RankingSource interface {
 }
 
 type Gateway interface {
-	Playlist(context.Context, string) (model.Playlist, error)
 	Search(context.Context, string, string, int, int) ([]model.Track, error)
 	ResolvePlatform(context.Context, string, string, string) (model.ResolvedTrack, error)
 }
 
 type Manager struct {
-	sources  map[string]Source
-	api      Gateway
-	fallback atomic.Bool
-	logger   *slog.Logger
+	sources map[string]Source
+	api     Gateway
 }
 
-func New(sources map[string]Source, api Gateway, fallback bool, logger *slog.Logger) *Manager {
-	m := &Manager{sources: sources, api: api, logger: logger}
-	m.fallback.Store(fallback)
-	return m
+func New(sources map[string]Source, api Gateway) *Manager {
+	return &Manager{sources: sources, api: api}
 }
-
-func (m *Manager) SetFallback(enabled bool) { m.fallback.Store(enabled) }
 
 // Rankings returns native public chart metadata. Charts never fall back to
 // ChKSz because they are platform metadata, not audio resolution.
@@ -62,8 +53,7 @@ func (m *Manager) Rankings(ctx context.Context, source string) ([]model.Ranking,
 	return ranker.Rankings(ctx)
 }
 
-// PlaylistFor dispatches a subscription source while keeping ordinary playlist
-// fallback behavior unchanged. Ranking reads are always native-only.
+// PlaylistFor dispatches native playlist and ranking subscriptions.
 func (m *Manager) PlaylistFor(ctx context.Context, source, sourceType, id string) (model.Playlist, error) {
 	if sourceType == "" || sourceType == "playlist" {
 		return m.Playlist(ctx, source, id)
@@ -100,16 +90,7 @@ func (m *Manager) Playlist(ctx context.Context, source, id string) (model.Playli
 	if ctx.Err() != nil {
 		return model.Playlist{}, ctx.Err()
 	}
-	if !m.fallback.Load() || source != "netease" || m.api == nil {
-		return model.Playlist{}, fmt.Errorf("%s native playlist failed (no supported fallback): %w", source, err)
-	}
-	m.logFallback(source, "playlist", err)
-	playlist, fallbackErr := m.api.Playlist(ctx, id)
-	if fallbackErr != nil {
-		return model.Playlist{}, errors.Join(fmt.Errorf("native playlist: %w", err), fmt.Errorf("ChKSz playlist fallback: %w", fallbackErr))
-	}
-	playlist.FetchedVia = "chksz_fallback"
-	return playlist, nil
+	return model.Playlist{}, fmt.Errorf("%s native playlist failed: %w", source, err)
 }
 
 func (m *Manager) Search(ctx context.Context, source, keyword string, limit, offset int) ([]model.Track, error) {
@@ -124,15 +105,7 @@ func (m *Manager) Search(ctx context.Context, source, keyword string, limit, off
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	if !m.fallback.Load() || m.api == nil {
-		return nil, fmt.Errorf("%s native search failed: %w", source, err)
-	}
-	m.logFallback(source, "search", err)
-	tracks, fallbackErr := m.api.Search(ctx, source, keyword, limit, offset)
-	if fallbackErr != nil {
-		return nil, errors.Join(fmt.Errorf("native search: %w", err), fmt.Errorf("ChKSz search fallback: %w", fallbackErr))
-	}
-	return tracks, nil
+	return nil, fmt.Errorf("%s native search failed: %w", source, err)
 }
 
 func (m *Manager) Resolve(ctx context.Context, source string, track model.Track, quality string) (model.ResolvedTrack, error) {
@@ -159,12 +132,6 @@ func (m *Manager) Resolve(ctx context.Context, source string, track model.Track,
 		return model.ResolvedTrack{}, err
 	}
 	return m.api.ResolvePlatform(ctx, source, id, quality)
-}
-
-func (m *Manager) logFallback(source, operation string, cause error) {
-	if m.logger != nil {
-		m.logger.Warn("native metadata failed; using metered ChKSz fallback", "platform", source, "operation", operation, "reason", cause.Error())
-	}
 }
 
 // MatchKugou rejects ambiguous versions instead of silently downloading a cover.

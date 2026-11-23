@@ -28,7 +28,7 @@ func TestLyricsNeverUsesMeteredGateway(t *testing.T) {
 			}
 			return "", sourceError
 		}},
-	}, gateway, true, nil)
+	}, gateway)
 	if got, err := manager.Lyrics(context.Background(), "netease", model.Track{ID: "123"}); err != nil || got != "[00:02.00]lyric" {
 		t.Fatalf("native result = %q, %v", got, err)
 	}

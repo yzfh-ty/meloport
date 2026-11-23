@@ -129,9 +129,6 @@ func (c *webController) install(cfg *config.Config, tasks []config.Task, start b
 	if previous != nil {
 		<-previous.Stop().Done()
 	}
-	if c.metadata != nil {
-		c.metadata.SetFallback(cfg.Metadata.FallbackToAPI)
-	}
 	if start {
 		next.Start()
 	}
@@ -369,7 +366,7 @@ func (c *webController) overview(w http.ResponseWriter, r *http.Request) {
 	if musicDir == "" {
 		musicDir = c.cfg.Storage.MusicDir
 	}
-	webJSON(w, 200, map[string]any{"timezone": c.cfg.Timezone, "schedule": c.cfg.Schedule, "quality": c.cfg.Quality, "auto_downgrade": c.cfg.AutoDowngrade, "music_dir": musicDir, "fallback_to_api": c.cfg.Metadata.FallbackToAPI, "api_key_env": c.cfg.API.KeyEnv, "api_key_configured": chksz.KeyConfigured(c.cfg.API.KeyEnv, c.cfg.API.Key), "stats": map[string]any{"tasks": len(views), "enabled": enabled, "downloaded": stats.Downloaded, "bytes": stats.Bytes}, "queue": queue, "tasks": views, "runs": runs})
+	webJSON(w, 200, map[string]any{"timezone": c.cfg.Timezone, "schedule": c.cfg.Schedule, "quality": c.cfg.Quality, "auto_downgrade": c.cfg.AutoDowngrade, "music_dir": musicDir, "api_key_env": c.cfg.API.KeyEnv, "api_key_configured": chksz.KeyConfigured(c.cfg.API.KeyEnv, c.cfg.API.Key), "stats": map[string]any{"tasks": len(views), "enabled": enabled, "downloaded": stats.Downloaded, "bytes": stats.Bytes}, "queue": queue, "tasks": views, "runs": runs})
 }
 
 func (c *webController) available(w http.ResponseWriter) bool {

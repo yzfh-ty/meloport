@@ -61,7 +61,7 @@ func TestSyncEmbedsLyricsAndBackfillsTrackedSongs(t *testing.T) {
 
 	list := playlist("003Legacy", "003New", "003Retry")
 	native := &lyricFixtureSource{nativeFixtureSource: nativeFixtureSource{list: list}, fail: true}
-	manager := provider.New(map[string]provider.Source{"qq": native}, nil, false, nil)
+	manager := provider.New(map[string]provider.Source{"qq": native}, nil)
 	dl, err := download.New(download.Options{HTTPClient: server.Client(), Lyrics: manager})
 	if err != nil {
 		t.Fatal(err)

@@ -142,7 +142,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 		"netease": netease.New(netease.Options{HTTP: metadataHTTP, Cookie: optionalEnv(cfg.Metadata.NeteaseCookieEnv)}),
 		"qq":      qq.New(qq.Options{HTTP: metadataHTTP, Cookie: optionalEnv(cfg.Metadata.QQCookieEnv)}),
 		"kugou":   kugou.New(kugou.Options{HTTP: metadataHTTP, Cookie: optionalEnv(cfg.Metadata.KugouCookieEnv)}),
-	}, gateway, cfg.Metadata.FallbackToAPI, logger)
+	}, gateway)
 	if command == "search" {
 		if *limit < 1 || *limit > 50 || *offset < 0 || *offset > 100000 || *keyword == "" || len([]rune(*keyword)) > 300 {
 			return errors.New("search requires -keyword, -limit 1-50 and -offset 0-100000")

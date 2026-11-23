@@ -72,7 +72,7 @@ type API struct {
 type Metadata struct {
 	Timeout          Duration `yaml:"timeout"`
 	MinInterval      Duration `yaml:"min_interval"`
-	FallbackToAPI    bool     `yaml:"fallback_to_api"`
+	LegacyFallback   bool     `yaml:"fallback_to_api,omitempty" json:"-"` // Ignored when reading old local YAML.
 	NeteaseCookieEnv string   `yaml:"netease_cookie_env"`
 	QQCookieEnv      string   `yaml:"qq_cookie_env"`
 	KugouCookieEnv   string   `yaml:"kugou_cookie_env"`
@@ -127,7 +127,7 @@ func defaults() Config {
 	return Config{
 		Timezone: "Asia/Shanghai", Schedule: DefaultSchedule, Quality: "lossless", AutoDowngrade: true,
 		API:      API{BaseURL: "https://api.chksz.com", KeyEnv: "CHKSZ_API_KEY", Timeout: Duration{30 * time.Second}, MinInterval: Duration{3100 * time.Millisecond}},
-		Metadata: Metadata{Timeout: Duration{30 * time.Second}, MinInterval: Duration{time.Second}, FallbackToAPI: true, NeteaseCookieEnv: "MELOPORT_NETEASE_COOKIE", QQCookieEnv: "MELOPORT_QQ_COOKIE", KugouCookieEnv: "MELOPORT_KUGOU_COOKIE"},
+		Metadata: Metadata{Timeout: Duration{30 * time.Second}, MinInterval: Duration{time.Second}, NeteaseCookieEnv: "MELOPORT_NETEASE_COOKIE", QQCookieEnv: "MELOPORT_QQ_COOKIE", KugouCookieEnv: "MELOPORT_KUGOU_COOKIE"},
 		Storage:  Storage{Database: "data/meloport.db", MusicDir: "data/music"},
 		Download: Download{Timeout: Duration{5 * time.Minute}, MaxSizeMB: 512},
 		Server:   Server{Listen: "127.0.0.1:8080"},

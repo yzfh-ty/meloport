@@ -84,7 +84,7 @@ func TestNativeQQPlaylistUsesMeteredAPIOnlyForMissingAudio(t *testing.T) {
 	address = server.URL
 	native := qq.New(qq.Options{BaseURL: server.URL, HTTP: platform.NewHTTP(server.Client(), time.Second, 0), Cookie: "uin=native_cookie_only"})
 	newManager := func() *provider.Manager {
-		return provider.New(map[string]provider.Source{"qq": native}, chksz.NewLazy(chksz.Options{BaseURL: server.URL}, keyEnv), true, nil)
+		return provider.New(map[string]provider.Source{"qq": native}, chksz.NewLazy(chksz.Options{BaseURL: server.URL}, keyEnv))
 	}
 	dl, err := download.New(download.Options{})
 	if err != nil {
@@ -241,7 +241,7 @@ func TestNativeSyncKeepsPlatformIdentitiesSeparateAndSkipsWithoutKey(t *testing.
 		sources[source] = nativeFixtureSource{list: model.Playlist{ID: "playlist", Name: source, ReportedCount: 1, Tracks: []model.Track{track}}}
 	}
 	newManager := func() *provider.Manager {
-		return provider.New(sources, chksz.NewLazy(chksz.Options{BaseURL: server.URL}, keyEnv), false, nil)
+		return provider.New(sources, chksz.NewLazy(chksz.Options{BaseURL: server.URL}, keyEnv))
 	}
 	dl, err := download.New(download.Options{})
 	if err != nil {

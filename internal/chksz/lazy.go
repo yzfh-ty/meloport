@@ -55,13 +55,6 @@ func (l *Lazy) get() (*Client, error) {
 	return client, nil
 }
 
-func (l *Lazy) Playlist(ctx context.Context, id string) (model.Playlist, error) {
-	c, err := l.get()
-	if err != nil {
-		return model.Playlist{}, err
-	}
-	return c.Playlist(ctx, id)
-}
 func (l *Lazy) Search(ctx context.Context, source, keyword string, limit, offset int) ([]model.Track, error) {
 	c, err := l.get()
 	if err != nil {

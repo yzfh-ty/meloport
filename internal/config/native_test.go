@@ -100,16 +100,16 @@ func TestNativeQualityInheritanceAndExplicitQualityStrictness(t *testing.T) {
 	}
 }
 
-func TestMetadataFallbackDefaultsAndEnvironmentNames(t *testing.T) {
+func TestNativeMetadataDefaultsAndEnvironmentNames(t *testing.T) {
 	cfg, err := Load(nativeConfigFile(t, "tasks: []\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Tasks) != 0 || !cfg.Metadata.FallbackToAPI || cfg.Metadata.MinInterval.Duration != time.Second || cfg.Metadata.NeteaseCookieEnv != "MELOPORT_NETEASE_COOKIE" || cfg.Metadata.QQCookieEnv != "MELOPORT_QQ_COOKIE" || cfg.Metadata.KugouCookieEnv != "MELOPORT_KUGOU_COOKIE" {
+	if len(cfg.Tasks) != 0 || cfg.Metadata.MinInterval.Duration != time.Second || cfg.Metadata.NeteaseCookieEnv != "MELOPORT_NETEASE_COOKIE" || cfg.Metadata.QQCookieEnv != "MELOPORT_QQ_COOKIE" || cfg.Metadata.KugouCookieEnv != "MELOPORT_KUGOU_COOKIE" {
 		t.Fatalf("wrong metadata defaults %+v", cfg.Metadata)
 	}
 	cfg, err = Load(nativeConfigFile(t, "metadata:\n fallback_to_api: false\n netease_cookie_env: CUSTOM_WY\n qq_cookie_env: CUSTOM_QQ\n kugou_cookie_env: ''\ntasks: []\n"))
-	if err != nil || cfg.Metadata.FallbackToAPI || cfg.Metadata.NeteaseCookieEnv != "CUSTOM_WY" || cfg.Metadata.QQCookieEnv != "CUSTOM_QQ" || cfg.Metadata.KugouCookieEnv != "" {
+	if err != nil || cfg.Metadata.NeteaseCookieEnv != "CUSTOM_WY" || cfg.Metadata.QQCookieEnv != "CUSTOM_QQ" || cfg.Metadata.KugouCookieEnv != "" {
 		t.Fatalf("wrong explicit metadata settings %+v %v", cfg, err)
 	}
 	for _, invalid := range []string{

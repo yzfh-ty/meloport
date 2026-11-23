@@ -43,7 +43,7 @@ func TestPlaylistDecodesWrappersWithoutLosingIDPrecision(t *testing.T) {
 				}
 				fmt.Fprint(w, body)
 			})
-			got, err := client.Playlist(context.Background(), "123")
+			got, err := client.fixturePlaylist(context.Background(), "123")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -66,11 +66,11 @@ func TestPlaylistAlternateFieldsAndEmptyPlaylist(t *testing.T) {
 		}
 		fmt.Fprint(w, `{"playlist_name":"收藏","songs":[{"song_id":"42","song_name":"你好","singer":"歌手","album":"唱片"}],"song_count":"1"}`)
 	})
-	got, err := client.Playlist(context.Background(), "1")
+	got, err := client.fixturePlaylist(context.Background(), "1")
 	if err != nil || len(got.Tracks) != 1 || got.Tracks[0].ID != "42" || got.Tracks[0].Album != "唱片" {
 		t.Fatalf("unexpected playlist: %+v, %v", got, err)
 	}
-	empty, err := client.Playlist(context.Background(), "2")
+	empty, err := client.fixturePlaylist(context.Background(), "2")
 	if err != nil || len(empty.Tracks) != 0 || empty.ReportedCount != 0 {
 		t.Fatalf("unexpected empty playlist: %+v, %v", empty, err)
 	}
@@ -92,7 +92,7 @@ func TestPlaylistRejectsMalformedAndIncompleteResponses(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			client, _ := testClient(t, func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, body) })
-			if _, err := client.Playlist(context.Background(), "123"); err == nil {
+			if _, err := client.fixturePlaylist(context.Background(), "123"); err == nil {
 				t.Fatal("expected an explicit malformed/incomplete response error")
 			}
 		})
@@ -139,7 +139,7 @@ func TestPlaylistChecksAuthoritativeTrackIdentities(t *testing.T) {
 			client, _ := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
 				fmt.Fprint(w, tc.body)
 			})
-			_, err := client.Playlist(context.Background(), "123")
+			_, err := client.fixturePlaylist(context.Background(), "123")
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("Playlist() err=%v, wantErr=%v", err, tc.wantErr)
 			}
@@ -209,7 +209,7 @@ func TestHTTPAndBusinessErrorsStopBatchesAndRedactKey(t *testing.T) {
 					}
 					fmt.Fprintf(w, `{"code":%d,"msg":"账户错误 %s"}`, status, testKey)
 				})
-				_, err := client.Playlist(context.Background(), "123")
+				_, err := client.fixturePlaylist(context.Background(), "123")
 				var apiErr *APIError
 				if !errors.As(err, &apiErr) || apiErr.Status != status {
 					t.Fatalf("expected APIError %d; got %v", status, err)
@@ -239,7 +239,7 @@ func Test429RetriesOnlyOnce(t *testing.T) {
 				w.WriteHeader(http.StatusTooManyRequests)
 				fmt.Fprint(w, `{"msg":"try later"}`)
 			})
-			_, err := client.Playlist(context.Background(), "123")
+			_, err := client.fixturePlaylist(context.Background(), "123")
 			if (err == nil) != recovered || calls.Load() != 2 {
 				t.Fatalf("expected exactly two requests and recovered=%v; calls=%d err=%v", recovered, calls.Load(), err)
 			}
@@ -255,7 +255,7 @@ func Test429BackoffRespectsCancellation(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	_, err := client.Playlist(ctx, "123")
+	_, err := client.fixturePlaylist(ctx, "123")
 	if !errors.Is(err, context.DeadlineExceeded) || !IsAccountError(err) {
 		t.Fatalf("expected canceled account-error backoff; got %v", err)
 	}
@@ -271,7 +271,7 @@ func TestAPIRedirectDoesNotSendCredentialToDestination(t *testing.T) {
 	client, _ := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, destination.URL+"?apikey="+testKey, http.StatusFound)
 	})
-	_, err := client.Playlist(context.Background(), "123")
+	_, err := client.fixturePlaylist(context.Background(), "123")
 	if err == nil || destinationCalls.Load() != 0 || strings.Contains(err.Error(), testKey) {
 		t.Fatalf("redirect was followed or leaked credentials: calls=%d err=%v", destinationCalls.Load(), err)
 	}
@@ -288,7 +288,7 @@ func TestTransportErrorsDoNotExposeCredentialURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = client.Playlist(context.Background(), "123")
+	_, err = client.fixturePlaylist(context.Background(), "123")
 	if err == nil || strings.Contains(err.Error(), testKey) || strings.Contains(err.Error(), "apikey") {
 		t.Fatalf("unsafe transport error: %v", err)
 	}
@@ -300,7 +300,7 @@ func TestResponseSizeLimit(t *testing.T) {
 		io.Copy(w, io.LimitReader(strings.NewReader(strings.Repeat("a", maxResponseBytes+1)), maxResponseBytes+1))
 		fmt.Fprint(w, `"}`)
 	})
-	_, err := client.Playlist(context.Background(), "123")
+	_, err := client.fixturePlaylist(context.Background(), "123")
 	if err == nil || !strings.Contains(err.Error(), "8 MiB") {
 		t.Fatalf("expected size limit error, got %v", err)
 	}
@@ -328,7 +328,7 @@ func TestRequestsAreSerializedAndSpaced(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := client.Playlist(context.Background(), "123"); err != nil {
+			if _, err := client.fixturePlaylist(context.Background(), "123"); err != nil {
 				t.Error(err)
 			}
 		}()
@@ -360,7 +360,7 @@ func TestRequestsRespectRollingRateWindow(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := client.Playlist(context.Background(), "123"); err != nil {
+			if _, err := client.fixturePlaylist(context.Background(), "123"); err != nil {
 				t.Error(err)
 			}
 		}()
@@ -385,13 +385,13 @@ func TestRequestsAllowExactlyTwentyBeforeRollingWindowBlocks(t *testing.T) {
 	client.rateLimit = 20
 	client.rateWindow = time.Second
 	for i := 0; i < 20; i++ {
-		if _, err := client.Playlist(context.Background(), "123"); err != nil {
+		if _, err := client.fixturePlaylist(context.Background(), "123"); err != nil {
 			t.Fatalf("request %d unexpectedly failed: %v", i+1, err)
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	if _, err := client.Playlist(ctx, "123"); !errors.Is(err, context.DeadlineExceeded) {
+	if _, err := client.fixturePlaylist(ctx, "123"); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("21st request did not wait for the rolling window: %v", err)
 	}
 	if calls.Load() != 20 {
@@ -407,12 +407,12 @@ func TestRateWindowCancellationDoesNotConsumeSlot(t *testing.T) {
 	})
 	client.rateLimit = 1
 	client.rateWindow = 80 * time.Millisecond
-	if _, err := client.Playlist(context.Background(), "123"); err != nil {
+	if _, err := client.fixturePlaylist(context.Background(), "123"); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
-	if _, err := client.Playlist(ctx, "123"); !errors.Is(err, context.DeadlineExceeded) {
+	if _, err := client.fixturePlaylist(ctx, "123"); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expected canceled rate-window wait, got %v", err)
 	}
 	if calls.Load() != 1 {
@@ -429,12 +429,12 @@ func TestFailedRequestConsumesRateWindowSlot(t *testing.T) {
 	})
 	client.rateLimit = 1
 	client.rateWindow = 80 * time.Millisecond
-	if _, err := client.Playlist(context.Background(), "123"); err == nil {
+	if _, err := client.fixturePlaylist(context.Background(), "123"); err == nil {
 		t.Fatal("expected first request to fail")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
-	if _, err := client.Playlist(ctx, "123"); !errors.Is(err, context.DeadlineExceeded) {
+	if _, err := client.fixturePlaylist(ctx, "123"); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expected second request to wait for the failed request's slot, got %v", err)
 	}
 	if calls.Load() != 1 {
@@ -460,7 +460,7 @@ func Test429RetryConsumesAnotherRateWindowSlot(t *testing.T) {
 	})
 	client.rateLimit = 1
 	client.rateWindow = 80 * time.Millisecond
-	if _, err := client.Playlist(context.Background(), "123"); err != nil {
+	if _, err := client.fixturePlaylist(context.Background(), "123"); err != nil {
 		t.Fatal(err)
 	}
 	mu.Lock()
@@ -482,7 +482,7 @@ func Test429RetryRateWindowCancellationPreservesAccountError(t *testing.T) {
 	client.rateWindow = 80 * time.Millisecond
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
-	_, err := client.Playlist(ctx, "123")
+	_, err := client.fixturePlaylist(ctx, "123")
 	if !errors.Is(err, context.DeadlineExceeded) || !IsAccountError(err) {
 		t.Fatalf("expected canceled retry to remain an account error, got %v", err)
 	}
@@ -506,7 +506,7 @@ func TestInvalidOptionsAndRequestParametersDoNotRequest(t *testing.T) {
 	var calls atomic.Int32
 	client, _ := testClient(t, func(w http.ResponseWriter, r *http.Request) { calls.Add(1) })
 	for _, id := range []string{"", "0", "123&apikey=x", "https://example.test/123"} {
-		if _, err := client.Playlist(context.Background(), id); err == nil {
+		if _, err := client.fixturePlaylist(context.Background(), id); err == nil {
 			t.Fatalf("accepted invalid ID %q", id)
 		}
 	}

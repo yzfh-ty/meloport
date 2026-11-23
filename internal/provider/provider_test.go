@@ -1,15 +1,11 @@
 package provider
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"log/slog"
 	"reflect"
-	"strings"
 	"testing"
 
-	"meloport/internal/chksz"
 	"meloport/internal/model"
 )
 
@@ -106,7 +102,7 @@ func TestNativeMetadataSuccessNeverTouchesMeteredGateway(t *testing.T) {
 						}
 						return tracks, nil
 					},
-				}}, gateway, true, nil)
+				}}, gateway)
 				playlist, err := manager.Playlist(context.Background(), source, "playlist123")
 				if err != nil || playlist.FetchedVia != "native" || !reflect.DeepEqual(playlist.Tracks, tracks) {
 					t.Fatalf("native playlist failed: %+v %v", playlist, err)
@@ -123,73 +119,34 @@ func TestNativeMetadataSuccessNeverTouchesMeteredGateway(t *testing.T) {
 	}
 }
 
-func TestSupportedMetadataFallbackOnlyAfterNativeFailure(t *testing.T) {
+func TestNativeMetadataFailureNeverConsumesGateway(t *testing.T) {
 	nativeFailure := errors.New("native connection refused")
 	for _, source := range []string{"netease", "qq", "kugou"} {
 		t.Run(source, func(t *testing.T) {
-			var log bytes.Buffer
-			logger := slog.New(slog.NewJSONHandler(&log, nil))
-			gateway := &stubGateway{
-				playlist: func(ctx context.Context, id string) (model.Playlist, error) {
-					return model.Playlist{ID: id, Tracks: []model.Track{}}, nil
-				},
-				search: func(ctx context.Context, gotSource, q string, limit, offset int) ([]model.Track, error) {
-					if gotSource != source || q != "query" || limit != 10 || offset != 2 {
-						t.Error("fallback lost search parameters")
-					}
-					return []model.Track{{ID: "api-ID"}}, nil
-				},
-			}
+			gateway := &stubGateway{}
 			manager := New(map[string]Source{source: stubSource{
 				playlist: func(context.Context, string) (model.Playlist, error) { return model.Playlist{}, nativeFailure },
 				search:   func(context.Context, string, int, int) ([]model.Track, error) { return nil, nativeFailure },
-			}}, gateway, true, logger)
-			playlist, err := manager.Playlist(context.Background(), source, "123")
-			if source == "netease" {
-				if err != nil || playlist.FetchedVia != "chksz_fallback" || gateway.playlistCalls != 1 {
-					t.Fatalf("missing supported fallback: %+v %v", playlist, err)
-				}
-			} else if !errors.Is(err, nativeFailure) || gateway.playlistCalls != 0 {
-				t.Fatalf("invented unsupported playlist fallback: %v calls%d", err, gateway.playlistCalls)
+			}}, gateway)
+			if _, err := manager.Playlist(context.Background(), source, "123"); !errors.Is(err, nativeFailure) {
+				t.Fatalf("native playlist cause lost: %v", err)
 			}
-			results, err := manager.Search(context.Background(), source, "query", 10, 2)
-			if err != nil || len(results) != 1 || gateway.searchCalls != 1 {
-				t.Fatalf("search fallback failed: %+v %v", results, err)
+			if _, err := manager.Search(context.Background(), source, "query", 10, 2); !errors.Is(err, nativeFailure) {
+				t.Fatalf("native search cause lost: %v", err)
 			}
-			if !strings.Contains(log.String(), "native connection refused") || !strings.Contains(log.String(), "metered ChKSz fallback") || !strings.Contains(log.String(), source) {
-				t.Fatalf("fallback reason missing: %s", &log)
+			if gateway.playlistCalls+gateway.searchCalls+gateway.resolveCalls != 0 {
+				t.Fatal("native metadata failure consumed the gateway")
 			}
 		})
 	}
 }
-
-func TestStrictNativeModeAndRuntimeToggle(t *testing.T) {
-	nativeFailure := errors.New("native failed")
-	gateway := &stubGateway{playlist: func(context.Context, string) (model.Playlist, error) { return model.Playlist{}, nil }, search: func(context.Context, string, string, int, int) ([]model.Track, error) { return []model.Track{}, nil }}
-	manager := New(map[string]Source{"netease": stubSource{playlist: func(context.Context, string) (model.Playlist, error) { return model.Playlist{}, nativeFailure }, search: func(context.Context, string, int, int) ([]model.Track, error) { return nil, nativeFailure }}}, gateway, false, nil)
-	for _, enabled := range []bool{false, true, false} {
-		manager.SetFallback(enabled)
-		_, playlistErr := manager.Playlist(context.Background(), "netease", "123")
-		_, searchErr := manager.Search(context.Background(), "netease", "query", 10, 0)
-		if enabled && (playlistErr != nil || searchErr != nil) {
-			t.Fatal("enabling fallback had no effect")
-		}
-		if !enabled && (!errors.Is(playlistErr, nativeFailure) || !errors.Is(searchErr, nativeFailure)) {
-			t.Fatal("strict native mode lost original failure")
-		}
-	}
-	if gateway.playlistCalls != 1 || gateway.searchCalls != 1 {
-		t.Fatal("disabled fallback consumed gateway")
-	}
-}
-
 func TestCanceledMetadataNeverFallsBack(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	gateway := &stubGateway{}
 	manager := New(map[string]Source{"netease": stubSource{playlist: func(context.Context, string) (model.Playlist, error) {
 		return model.Playlist{}, errors.New("native stopped")
-	}, search: func(context.Context, string, int, int) ([]model.Track, error) { return nil, context.Canceled }}}, gateway, true, nil)
+	}, search: func(context.Context, string, int, int) ([]model.Track, error) { return nil, context.Canceled }}}, gateway)
 	if _, err := manager.Playlist(ctx, "netease", "123"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("wrong cancel error: %v", err)
 	}
@@ -201,24 +158,9 @@ func TestCanceledMetadataNeverFallsBack(t *testing.T) {
 	}
 }
 
-func TestFallbackFailurePreservesBothCausesAndAccountStatus(t *testing.T) {
-	nativeFailure := errors.New("native blocked")
-	quota := &chksz.APIError{Status: 402, Message: "quota exhausted"}
-	gateway := &stubGateway{playlist: func(context.Context, string) (model.Playlist, error) { return model.Playlist{}, quota }, search: func(context.Context, string, string, int, int) ([]model.Track, error) { return nil, quota }}
-	manager := New(map[string]Source{"netease": stubSource{playlist: func(context.Context, string) (model.Playlist, error) { return model.Playlist{}, nativeFailure }, search: func(context.Context, string, int, int) ([]model.Track, error) { return nil, nativeFailure }}}, gateway, true, nil)
-	_, err := manager.Playlist(context.Background(), "netease", "123")
-	if !errors.Is(err, nativeFailure) || !errors.Is(err, quota) || !chksz.IsAccountError(err) {
-		t.Fatalf("lost fallback causes: %v", err)
-	}
-	_, err = manager.Search(context.Background(), "netease", "q", 20, 0)
-	if !errors.Is(err, nativeFailure) || !errors.Is(err, quota) || !chksz.IsAccountError(err) {
-		t.Fatalf("lost fallback causes: %v", err)
-	}
-}
-
 func TestUnknownSourceAndAbsentGateway(t *testing.T) {
 	gateway := &stubGateway{}
-	manager := New(map[string]Source{}, gateway, true, nil)
+	manager := New(map[string]Source{}, gateway)
 	if _, err := manager.Playlist(context.Background(), "unknown", "123"); err == nil {
 		t.Fatal("accepted unknown playlist source")
 	}
@@ -231,7 +173,7 @@ func TestUnknownSourceAndAbsentGateway(t *testing.T) {
 	if gateway.playlistCalls+gateway.searchCalls+gateway.resolveCalls != 0 {
 		t.Fatal("unknown source touched gateway")
 	}
-	manager = New(nil, nil, true, nil)
+	manager = New(nil, nil)
 	if _, err := manager.Resolve(context.Background(), "qq", model.Track{ID: "MID"}, ""); err == nil {
 		t.Fatal("missing gateway accepted")
 	}
@@ -251,7 +193,7 @@ func TestRankingCatalogAndSubscriptionStayNative(t *testing.T) {
 		},
 	}
 	gateway := &stubGateway{}
-	manager := New(map[string]Source{"qq": source}, gateway, true, nil)
+	manager := New(map[string]Source{"qq": source}, gateway)
 	got, err := manager.Rankings(context.Background(), "qq")
 	if err != nil || !reflect.DeepEqual(got, rankings) {
 		t.Fatalf("ranking directory failed: %+v %v", got, err)
@@ -284,7 +226,7 @@ func TestResolveUsesPlatformIdentityWithoutMetadataRequests(t *testing.T) {
 				}
 				return model.ResolvedTrack{URL: "https://audio.example/song.flac"}, nil
 			}}
-			manager := New(nil, gateway, false, nil)
+			manager := New(nil, gateway)
 			if _, err := manager.Resolve(context.Background(), source, model.Track{ID: id}, quality); err != nil {
 				t.Fatal(err)
 			}
@@ -313,7 +255,7 @@ func TestKugouSearchOccursOnlyDuringResolution(t *testing.T) {
 	}
 	manager := New(map[string]Source{"kugou": stubSource{playlist: func(context.Context, string) (model.Playlist, error) {
 		return model.Playlist{Tracks: []model.Track{track}}, nil
-	}, search: func(context.Context, string, int, int) ([]model.Track, error) { return []model.Track{track}, nil }}}, gateway, true, nil)
+	}, search: func(context.Context, string, int, int) ([]model.Track, error) { return []model.Track{track}, nil }}}, gateway)
 	if _, err := manager.Playlist(context.Background(), "kugou", "playlist"); err != nil {
 		t.Fatal(err)
 	}

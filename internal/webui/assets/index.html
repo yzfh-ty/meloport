@@ -431,7 +431,7 @@
                 </button>
                 <h1 id="search-title" tabindex="-1">歌曲检索</h1>
               </div>
-              <span class="subtle-badge">直连优先</span>
+              <span class="subtle-badge">平台直连</span>
             </div>
             <section class="panel search-panel" aria-label="平台歌曲搜索">
               <form id="search-form" novalidate>
@@ -472,8 +472,7 @@
                   </button>
                 </div>
                 <p class="field-hint">
-                  检索不会下载音频。直连不可用时，按全局设置决定是否回退到
-                  ChKSz。
+                  检索不会下载音频。平台直连失败时会显示错误，请根据提示处理后重试。
                 </p>
               </form>
             </section>
@@ -999,9 +998,9 @@
                       <label for="settings-schedule">默认同步计划</label>
                       <div class="schedule-controls">
                         <select id="settings-schedule" aria-describedby="settings-schedule-error settings-schedule-hint"></select>
-                        <div id="settings-schedule-weekday-field" class="schedule-detail" hidden><label for="settings-schedule-weekday">星期</label><select id="settings-schedule-weekday"></select></div>
-                        <div id="settings-schedule-time-field" class="schedule-detail"><label for="settings-schedule-time">时间</label><input id="settings-schedule-time" type="time" value="03:00" step="60" /></div>
-                        <div id="settings-schedule-interval-field" class="schedule-detail" hidden><label for="settings-schedule-interval" id="settings-schedule-interval-label">间隔</label><select id="settings-schedule-interval"></select></div>
+                        <div id="settings-schedule-weekday-field" class="schedule-detail" hidden><label class="sr-only" for="settings-schedule-weekday">星期</label><select id="settings-schedule-weekday"></select></div>
+                        <div id="settings-schedule-time-field" class="schedule-detail"><label class="sr-only" for="settings-schedule-time">时间</label><input id="settings-schedule-time" type="time" value="03:00" step="60" /></div>
+                        <div id="settings-schedule-interval-field" class="schedule-detail" hidden><label class="sr-only" for="settings-schedule-interval" id="settings-schedule-interval-label">间隔</label><select id="settings-schedule-interval"></select></div>
                       </div>
                       <span id="settings-schedule-error" class="field-error" hidden></span>
                       <p id="settings-schedule-hint" class="field-hint"></p>
@@ -1035,10 +1034,6 @@
                       <label class="checkbox-field" for="settings-auto-downgrade">
                         <input id="settings-auto-downgrade" name="auto_downgrade" type="checkbox" />
                         <span><strong>音质不可用时自动降级</strong><small>仅在所选音质不可用时尝试较低音质。</small></span>
-                      </label>
-                      <label class="checkbox-field" for="settings-fallback">
-                        <input id="settings-fallback" name="fallback_to_api" type="checkbox" />
-                        <span><strong>直连失败时允许 ChKSz 回退</strong><small>回退会消耗额度，仅限支持的接口。</small></span>
                       </label>
                     </div>
                   </fieldset>

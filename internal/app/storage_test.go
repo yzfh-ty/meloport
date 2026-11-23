@@ -15,7 +15,7 @@ import (
 )
 
 func musicSettings(root *string) config.SettingsInput {
-	return config.SettingsInput{Timezone: "Asia/Shanghai", Schedule: config.DefaultSchedule, Quality: "lossless", FallbackToAPI: true, MusicDir: root}
+	return config.SettingsInput{Timezone: "Asia/Shanghai", Schedule: config.DefaultSchedule, Quality: "lossless", MusicDir: root}
 }
 
 func TestWebMusicDirectorySettingsPersistAndPendingTasksUseNewRoot(t *testing.T) {

@@ -19,6 +19,8 @@ import (
 	"meloport/internal/chksz"
 	"meloport/internal/download"
 	"meloport/internal/model"
+	"meloport/internal/platform/netease"
+	"meloport/internal/provider"
 	"meloport/internal/state"
 	"meloport/internal/syncer"
 )
@@ -32,12 +34,12 @@ func TestFixtureAPIToAudioToSQLiteAndRestart(t *testing.T) {
 	var address string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/163_playlist":
+		case "/api/linux/forward":
 			playlistCalls.Add(1)
-			if r.URL.Query().Get("apikey") != key {
-				t.Error("playlist request did not include configured key")
+			if r.URL.Query().Get("apikey") != "" {
+				t.Error("native playlist request included an audio API key")
 			}
-			fmt.Fprint(w, `{"code":200,"data":{"playlist":{"id":"123","name":"Integration","trackCount":2,"tracks":[{"id":1001,"name":"One","ar":[{"name":"Artist"}]},{"id":"1002","name":"Two"}]}}}`)
+			fmt.Fprint(w, `{"code":200,"playlist":{"id":123,"name":"Integration","trackCount":2,"trackIds":[{"id":1001},{"id":1002}],"tracks":[{"id":1001,"name":"One","ar":[{"name":"Artist"}]},{"id":1002,"name":"Two"}]}}`)
 		case "/api/163_music":
 			resolveCalls.Add(1)
 			if r.URL.Query().Get("apikey") != key || r.URL.Query().Get("level") != "lossless" {
@@ -58,10 +60,11 @@ func TestFixtureAPIToAudioToSQLiteAndRestart(t *testing.T) {
 	}))
 	defer server.Close()
 	address = server.URL
-	provider, err := chksz.New(chksz.Options{BaseURL: server.URL, APIKey: key})
+	gateway, err := chksz.New(chksz.Options{BaseURL: server.URL, APIKey: key})
 	if err != nil {
 		t.Fatal(err)
 	}
+	metadata := provider.New(map[string]provider.Source{"netease": netease.New(netease.Options{BaseURL: server.URL})}, gateway)
 	downloader, err := download.New(download.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +77,7 @@ func TestFixtureAPIToAudioToSQLiteAndRestart(t *testing.T) {
 	}
 	defer func() { store.Close() }()
 	task := model.Task{ID: "integration", PlaylistID: "123", Quality: "lossless", Directory: filepath.Join(dir, "music")}
-	engine := syncer.New(provider, downloader, store)
+	engine := syncer.NewWithSources(metadata, metadata, downloader, store)
 	first, err := engine.Run(context.Background(), task)
 	if err != nil || first.Downloaded != 2 || first.Status != "success" {
 		t.Fatalf("first %+v err=%v", first, err)
@@ -86,7 +89,7 @@ func TestFixtureAPIToAudioToSQLiteAndRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine = syncer.New(provider, downloader, store)
+	engine = syncer.NewWithSources(metadata, metadata, downloader, store)
 	second, err := engine.Run(context.Background(), task)
 	if err != nil || second.Skipped != 2 || second.Downloaded != 0 {
 		t.Fatalf("restart %+v err=%v", second, err)
