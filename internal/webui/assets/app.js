@@ -805,9 +805,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderSettings(force = false) {
     const data = state.overview;
     if (!data) return;
-    text('settings-key-status', data.api_key_configured ? '密钥已配置' : '密钥未配置');
+    text('settings-key-status', data.api_key_configured ? '解析密钥已配置' : '解析密钥未配置');
     $('settings-key-status').className = `status-badge ${data.api_key_configured ? 'status-success' : 'status-warning'}`;
-    text('settings-key-env', data.api_key_env || 'CHKSZ_API_KEY');
     if (state.settingsDirty && !force) return;
     $('settings-timezone').value = data.timezone || '';
     setSchedule('settings', data.schedule || '');
@@ -1381,13 +1380,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const mediaEnabled = $('cloud-media-enabled').checked;
     const navidromeEnabled = $('cloud-navidrome-enabled').checked;
     $('cloud-storage-fields').disabled = !cloudEnabled;
-    $('cloud-advanced-fields').disabled = !cloudEnabled;
     $('cloud-media-fields').disabled = !mediaEnabled && !cloudEnabled;
-    $('cloud-media-listen').disabled = !mediaEnabled;
     $('cloud-navidrome-fields').disabled = !navidromeEnabled;
-    $('cloud-navidrome-credentials').disabled = !$('cloud-navidrome-playlist-sync').checked;
     $('cloud-target-cid').required = cloudEnabled;
-    $('cloud-media-listen').required = mediaEnabled;
     $('cloud-navidrome-url').required = navidromeEnabled;
     $('cloud-navidrome-mount-root').required = navidromeEnabled;
     const data = state.cloud.data;
@@ -1498,12 +1493,6 @@ document.addEventListener('DOMContentLoaded', () => {
       $('cloud-target-cid').focus();
       return;
     }
-    if (settings.media_enabled && !settings.media_listen) {
-      $('cloud-media-listen').closest('details').open = true;
-      cloudFeedback('cloud-settings-error', '开启媒体端口时，请填写监听地址和端口。');
-      $('cloud-media-listen').focus();
-      return;
-    }
     if (settings.navidrome_enabled && !settings.media_enabled) {
       $('cloud-media-enabled').closest('details').open = true;
       cloudFeedback('cloud-settings-error', '接入 Navidrome 时，请同时开启独立媒体端口。');
@@ -1520,12 +1509,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (settings.navidrome_enabled && settings.navidrome_playlist_sync && !settings.enabled) {
       cloudFeedback('cloud-settings-error', '同步创建 Navidrome 榜单歌单时，请先开启 115 交接。');
       $('cloud-enabled').focus();
-      return;
-    }
-    if (settings.navidrome_enabled && settings.navidrome_playlist_sync && (!settings.navidrome_username || !settings.navidrome_password_env)) {
-      $('cloud-navidrome-url').closest('details').open = true;
-      cloudFeedback('cloud-settings-error', '启用歌单同步时，请填写 Navidrome 地址、挂载路径、用户名和密码环境变量名。');
-      $('cloud-navidrome-username').focus();
       return;
     }
     cloudAction($('cloud-save'), 'save', '正在保存', async () => {

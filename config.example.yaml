@@ -37,26 +37,27 @@ server:
   # For local development, set admin_password in your ignored config.yaml instead.
   # admin_password: "YOUR_LOCAL_TEST_PASSWORD"
 
-# Optional CD2 handoff, 115 verification and playback. Also editable under 115 与 STRM in the Web UI.
+# Optional CD2 handoff, 115 verification and playback. Edit switches, paths and player URLs in the Web UI.
+# Deployment settings below remain compatible with YAML; prefer the documented environment overrides.
 # Restart after changes; Web QR login is held in process memory.
 cloud115:
   enabled: false
   media_enabled: false
   navidrome_enabled: false
   navidrome_playlist_sync: false
-  client_id: "100197303"
-  access_token_env: MELOPORT_115_ACCESS_TOKEN
+  client_id: "100197303" # MELOPORT_115_CLIENT_ID takes precedence.
+  access_token_env: MELOPORT_115_ACCESS_TOKEN # Legacy token variable alias; never store the token here.
   # target_cid: "123456" # Dedicated non-root 115 directory that CD2 uploads into.
   staging_dir: data/115-staging # CD2 watches this tree. Same filesystem as task directories.
   strm_dir: data/strm
-  media_listen: "127.0.0.1:8081"
+  media_listen: "127.0.0.1:8081" # MELOPORT_MEDIA_LISTEN takes precedence.
   media_base_url: "http://127.0.0.1:8081" # Use the HTTPS address reachable by remote players.
-  poll_interval: 1m
-  timeout: 15s
+  poll_interval: 1m # MELOPORT_115_POLL_INTERVAL takes precedence.
+  timeout: 15s # MELOPORT_115_TIMEOUT takes precedence.
   # navidrome_url: "http://127.0.0.1:4533"
   # navidrome_mount_root: "/music/115" # Target directory as seen by the music server.
-  # navidrome_username: "meloport"
-  # navidrome_password_env: MELOPORT_NAVIDROME_PASSWORD # Password is read from this process environment variable.
+  # navidrome_username: "meloport" # MELOPORT_NAVIDROME_USERNAME takes precedence.
+  # navidrome_password_env: MELOPORT_NAVIDROME_PASSWORD # Legacy password variable alias; environment only.
 
 tasks:
   - id: favorites

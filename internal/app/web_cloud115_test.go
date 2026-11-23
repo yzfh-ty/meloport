@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"image/png"
@@ -73,6 +74,7 @@ func startCloudWebFixture(t *testing.T, f *webFixture) {
 }
 
 func TestCloudWebMediaSwitchesPreserveLocalDownloadsAndRequireRestart(t *testing.T) {
+	t.Setenv("MELOPORT_MEDIA_LISTEN", "127.0.0.1:18081")
 	f := newWebFixture(t)
 	readOverview := func() cloudOverviewView {
 		t.Helper()
@@ -91,11 +93,11 @@ func TestCloudWebMediaSwitchesPreserveLocalDownloadsAndRequireRestart(t *testing
 	}
 	settings := initial.Settings
 	settings.MediaEnabled, settings.NavidromeEnabled = true, true
-	settings.MediaListen, settings.MediaBaseURL = "127.0.0.1:18081", "http://127.0.0.1:18081"
+	settings.MediaBaseURL = "http://127.0.0.1:18081"
 	settings.NavidromeURL, settings.NavidromeMountRoot = "http://127.0.0.1:4533", "/music"
 	putFixtureCloudSettings(t, f, settings)
 	saved := readOverview()
-	if saved.RuntimeEnabled || saved.MediaRuntimeEnabled || saved.NavidromeRuntimeEnabled || !saved.RestartRequired || saved.Settings.MediaListen != settings.MediaListen {
+	if saved.RuntimeEnabled || saved.MediaRuntimeEnabled || saved.NavidromeRuntimeEnabled || !saved.RestartRequired || saved.Settings.MediaBaseURL != settings.MediaBaseURL {
 		t.Fatal("saving a media address must not start its listener before restart")
 	}
 	startCloudWebFixture(t, f)
@@ -104,7 +106,7 @@ func TestCloudWebMediaSwitchesPreserveLocalDownloadsAndRequireRestart(t *testing
 		t.Fatal("standalone Navidrome runtime incorrectly enables 115 handoff")
 	}
 	webStatus(t, webRequest(t, f, http.MethodPost, "/api/cloud115/login", nil), http.StatusConflict)
-	settings.MediaListen = "127.0.0.1:18082"
+	t.Setenv("MELOPORT_MEDIA_LISTEN", "127.0.0.1:18082")
 	putFixtureCloudSettings(t, f, settings)
 	settings.MediaEnabled, settings.NavidromeEnabled = false, false
 	putFixtureCloudSettings(t, f, settings)
@@ -116,6 +118,48 @@ func TestCloudWebMediaSwitchesPreserveLocalDownloadsAndRequireRestart(t *testing
 	cfg, err := config.Load(f.path)
 	if err != nil || cfg.Storage.MusicDir != f.cfg.Storage.MusicDir || cfg.Cloud115.NavidromeURL != settings.NavidromeURL {
 		t.Fatalf("integration settings changed local downloads or lost saved endpoints: %v", err)
+	}
+}
+
+func TestCloudWebKeepsDeploymentSettingsOnTheServer(t *testing.T) {
+	t.Setenv("MELOPORT_115_CLIENT_ID", "987654321")
+	t.Setenv("MELOPORT_NAVIDROME_USERNAME", "web-hidden-deployment-user")
+	f := newWebFixture(t)
+	response := webRequest(t, f, http.MethodGet, "/api/cloud115", nil)
+	webStatus(t, response, http.StatusOK)
+	var overview struct {
+		Settings map[string]json.RawMessage `json:"settings"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &overview); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(f.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"client_id", "access_token_env", "poll_interval", "timeout", "media_listen", "navidrome_username", "navidrome_password_env"} {
+		if _, exposed := overview.Settings[field]; exposed {
+			t.Fatalf("deployment field %s is exposed in Web settings", field)
+		}
+		webStatus(t, webRequest(t, f, http.MethodPut, "/api/cloud115/settings", map[string]string{field: "submitted-deployment-value"}), http.StatusBadRequest)
+	}
+	after, err := os.ReadFile(f.path)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("a Web request changed a deployment field")
+	}
+	if strings.Contains(response.Body.String(), "web-hidden-deployment-user") || strings.Contains(response.Body.String(), "987654321") {
+		t.Fatal("Web status exposed deployment environment values")
+	}
+	settings := f.cfg.Cloud115.Settings()
+	settings.Enabled, settings.TargetCID = true, "12345"
+	putFixtureCloudSettings(t, f, settings)
+	saved, err := config.Load(f.path)
+	if err != nil || saved.Cloud115.ClientID != "987654321" || saved.Cloud115.NavidromeUsername != "web-hidden-deployment-user" {
+		t.Fatalf("Web save lost effective deployment settings: %v", err)
+	}
+	text, err := os.ReadFile(f.path)
+	if err != nil || strings.Contains(string(text), "web-hidden-deployment-user") || strings.Contains(string(text), "987654321") {
+		t.Fatal("Web save copied a deployment environment value into YAML")
 	}
 }
 

@@ -11,7 +11,7 @@ test('disabled integrations preserve their addresses while saving explicit off s
     { name: 'media_enabled', type: 'checkbox', checked: false },
     { name: 'navidrome_enabled', type: 'checkbox', checked: false },
     { name: 'navidrome_playlist_sync', type: 'checkbox', checked: false },
-    { name: 'media_listen', type: 'text', value: ' 127.0.0.1:18081 ', disabled: true },
+    { name: 'media_base_url', type: 'url', value: ' http://127.0.0.1:18081 ', disabled: true },
     { name: 'navidrome_url', type: 'url', value: ' http://127.0.0.1:4533 ', disabled: true },
     { name: 'navidrome_mount_root', type: 'text', value: '/music', disabled: true },
   ];
@@ -24,7 +24,7 @@ test('disabled integrations preserve their addresses while saving explicit off s
   assert.equal(settings.media_enabled, false);
   assert.equal(settings.navidrome_enabled, false);
   assert.equal(settings.navidrome_playlist_sync, false);
-  assert.equal(settings.media_listen, '127.0.0.1:18081');
+  assert.equal(settings.media_base_url, 'http://127.0.0.1:18081');
   assert.equal(settings.navidrome_url, 'http://127.0.0.1:4533');
   assert.equal(settings.navidrome_mount_root, '/music');
 });

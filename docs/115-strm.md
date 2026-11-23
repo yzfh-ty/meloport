@@ -20,8 +20,8 @@ Meloport 默认只把订阅歌曲下载到本地并补齐音频标签。115 交�
 | CD2 暂存目录 | `staging_dir` | `data/115-staging`，与下载根目录、任务工作目录位于同一文件系统，供 CD2 监控 |
 | STRM 导出目录 | `strm_dir` | `data/strm`，供支持音频 STRM 的播放器读取 |
 | 播放器访问地址 | `media_base_url` | `http://127.0.0.1:8081`，写入 STRM。跨设备使用播放器能访问的 HTTPS 地址 |
-| 媒体反代监听地址 | `media_listen` | `127.0.0.1:8081`，端口可修改，和网页管理端口分开 |
-| 自动核对间隔 | `poll_interval` | `1m`，可在高级设置调整 |
+| Navidrome 服务地址 | `navidrome_url` | 启用 Navidrome 时必填 |
+| Navidrome 中的音乐目录 | `navidrome_mount_root` | Navidrome 运行环境看到的音乐目录绝对路径 |
 
 本地相对路径从配置文件所在目录解析。暂存目录、STRM 目录、下载工作目录和数据库应当各自独立。Meloport 从工作目录向 CD2 暂存目录原子移动完整音频，因此需要同卷路径。YAML 配置字段和默认值见 [配置示例](../config.example.yaml)。
 
@@ -32,7 +32,7 @@ Meloport 默认只把订阅歌曲下载到本地并补齐音频标签。115 交�
 1. 重启后返回「115 与 STRM」，点击「扫码登录」。用手机 115 App 扫码，在手机上确认授权。
 2. 页面授权成功后，点击「检查连接」，确认当前账号能读取目标目录。二维码超时可重新获取。
 
-扫码得到的短期 Access Token 只保留在 Meloport 进程内。令牌过期或服务重启后，重新扫码。网页没有令牌输入框，也没有自动续期。应用 ID 默认 `100197303`，可在高级设置更换。扫码授权优先于环境变量，退出扫码授权后恢复使用启动时已配置的环境变量。
+扫码得到的短期 Access Token 只保留在 Meloport 进程内。令牌过期或服务重启后，重新扫码。网页没有令牌输入框，也没有自动续期。应用 ID 默认 `100197303`，需要更换时设置 `MELOPORT_115_CLIENT_ID` 并重启。扫码授权优先于环境变量，退出扫码授权后恢复使用启动时已配置的环境变量。
 
 如果启用了 115 交接但尚未授权，网页仍能启动。需要交接的新音频任务会提示先登录。仅使用命令行时，可按本文最后的环境变量方式授权。
 
@@ -52,18 +52,46 @@ Meloport 默认只把订阅歌曲下载到本地并补齐音频标签。115 交�
 
 ## 4. 配置播放器
 
-**支持音频 STRM 的播放器**读取导出文件中的稳定媒体地址。使用前，在「Navidrome 接入与媒体端口」开启「独立媒体端口」，填写 `media_listen` 与 `media_base_url`，保存并重启。端口可以修改；直接访问时，播放器地址中的端口应与监听端口一致。跨设备访问时，填写播放器能访问的 HTTPS 反代地址，并将反代上游指向配置的媒体监听地址。只播放 STRM 不需要开启 Navidrome 接入。
+**支持音频 STRM 的播放器**读取导出文件中的稳定媒体地址。使用前，在「播放器与 Navidrome」开启「独立媒体端口」，填写播放器访问地址 `media_base_url`，保存并重启。媒体默认监听 `127.0.0.1:8081`，需要更换时通过 `MELOPORT_MEDIA_LISTEN` 配置；直接访问时，播放器地址中的端口应与监听端口一致。跨设备访问时，填写播放器能访问的 HTTPS 反代地址，并将反代上游指向配置的媒体监听地址。只播放 STRM 不需要开启 Navidrome 接入。
 
 播放器请求该地址时，Meloport 按请求的 User-Agent 获取 115 临时直链并返回 HTTP `302`。反代应保留 User-Agent，并将 302 返回给播放器。如果配置了地址路径前缀，反代应去掉前缀后再转发。持有 STRM 链接即可请求对应音频，请保护导出目录，并在反代访问日志中隐藏媒体路径。关闭独立媒体端口后，已生成的 STRM 会保留，但需重新开启端口才能通过 Meloport 播放。
 
 **Navidrome** 可以单独接入本地下载模式，也可以搭配 115。Navidrome 扫描本地音乐目录，或 CD2 挂载的 **115 真实音频目录**，`.strm` 文件供支持该格式的其他播放器使用。
 
-1. 在「Navidrome 接入与媒体端口」分别开启「独立媒体端口」和「Navidrome 接入」。填写可修改的 `media_listen`、播放器地址、`navidrome_url`，以及 Navidrome 运行环境看到的音乐目录绝对路径 `navidrome_mount_root`。保存后重启。
+1. 在「播放器与 Navidrome」分别开启「独立媒体端口」和「Navidrome 接入」。填写播放器地址、`navidrome_url`，以及 Navidrome 运行环境看到的音乐目录绝对路径 `navidrome_mount_root`。保存后重启。
 2. 将 Subsonic 客户端连接到 Meloport 媒体地址，使用 Navidrome 的账号和原生认证。本地模式的音频请求由 Navidrome 处理；无需开启 115，也不会将本地音频移入 CD2 目录。请勿将 Meloport 加入 Navidrome 的外部鉴权代理信任列表。
 3. 如果需要 115 的 302 直链播放，另行启用 115 交接、完成远端核对，并让 Navidrome 扫描 CD2 挂载的真实音频。在对应播放器设置中开启 **Report Real Path**，关闭服务端转码和码率限制。
-4. 如需自动创建榜单歌单，启用「同步创建 Navidrome 榜单歌单」，填写 Navidrome 用户名并设置 `MELOPORT_NAVIDROME_PASSWORD`（或配置的环境变量名）。此功能默认关闭，需同时启用 115 和 Navidrome。远程服务必须使用 HTTPS，本机可用 HTTP。密码只从 Meloport 进程环境读取。Navidrome 扫描完所有文件后，后续榜单同步才会创建或更新歌单；普通订阅歌单不会发布。
+4. 如需自动创建榜单歌单，先在服务进程环境设置 `MELOPORT_NAVIDROME_USERNAME` 和 `MELOPORT_NAVIDROME_PASSWORD`，再启用「同步创建 Navidrome 榜单歌单」，保存并重启。此功能默认关闭，需同时启用 115 和 Navidrome。远程服务必须使用 HTTPS，本机可用 HTTP。密码只从 Meloport 进程环境读取。Navidrome 扫描完所有文件后，后续榜单同步才会创建或更新歌单；普通订阅歌单不会发布。
 
 经过 Meloport 的 `/rest/stream` 或 `/rest/stream.view` 请求，在原生鉴权成功、有真实路径且能匹配远端文件时尝试 302。显式请求转码或限码率、无法匹配、取直链失败以及 HLS 等其他端点继续由 Navidrome 处理。直接连接 Navidrome 时，Navidrome 从 CD2 挂载读取音频。
+
+## 部署环境变量
+
+应用 ID、授权变量名、核对参数、媒体监听地址和 Navidrome 同步账号由服务端配置，网页只保留接入开关、目录和播放器地址。系统设置页只显示解析密钥是否已配置；ChKSz 密钥仍使用 `CHKSZ_API_KEY`，平台 Cookie 仍通过对应环境变量提供。
+
+| 环境变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `MELOPORT_115_CLIENT_ID` | `100197303` | 115 扫码使用的数字应用 ID |
+| `MELOPORT_115_ACCESS_TOKEN` | 无 | 可选的短期授权令牌；也可在网页扫码 |
+| `MELOPORT_115_POLL_INTERVAL` | `1m` | 自动核对间隔，范围 `15s`–`24h` |
+| `MELOPORT_115_TIMEOUT` | `15s` | 115 和 Navidrome 请求超时，范围 `1s`–`1m` |
+| `MELOPORT_MEDIA_LISTEN` | `127.0.0.1:8081` | 独立媒体监听地址；需在网页启用媒体端口 |
+| `MELOPORT_NAVIDROME_USERNAME` | 无 | 创建榜单歌单使用的 Navidrome 账号 |
+| `MELOPORT_NAVIDROME_PASSWORD` | 无 | 上述账号的密码，仅从进程环境读取 |
+
+在启动 Meloport 的同一个 PowerShell 窗口中配置，例如：
+
+```powershell
+$env:MELOPORT_MEDIA_LISTEN = '127.0.0.1:18081'
+$env:MELOPORT_115_POLL_INTERVAL = '2m'
+$env:MELOPORT_NAVIDROME_USERNAME = 'meloport'
+$navidromePassword = Read-Host 'Navidrome 歌单同步密码' -AsSecureString
+$env:MELOPORT_NAVIDROME_PASSWORD = [System.Net.NetworkCredential]::new('', $navidromePassword).Password
+Remove-Variable navidromePassword
+.\bin\meloport.exe serve -config config.yaml
+```
+
+以上非空的部署环境变量优先于已有 YAML 中的 `client_id`、`poll_interval`、`timeout`、`media_listen` 和 `navidrome_username`；未提供时继续使用原配置或默认值。为兼容现有部署，YAML 中的 `access_token_env` 和 `navidrome_password_env` 仍可指定旧的令牌、密码变量名。网页保存其他设置时会保留这些旧字段及注释，并且不会把环境变量值写入 YAML。修改进程环境后需重启；由服务管理器启动时，应在其运行环境中设置。
 
 ## 常见问题
 

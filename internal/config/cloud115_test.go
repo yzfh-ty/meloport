@@ -1,9 +1,11 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCloud115ConfigurationKeepsCD2AwayFromWorkFiles(t *testing.T) {
@@ -86,6 +88,8 @@ func TestMediaAndNavidromeRequireExplicitSwitches(t *testing.T) {
 }
 
 func TestEditorPersistsOptionalSwitchesAndCustomMediaPort(t *testing.T) {
+	const mediaListen = "127.0.0.1:18081"
+	t.Setenv("MELOPORT_MEDIA_LISTEN", mediaListen)
 	path, editor := editorFixture(t, editorExample)
 	cfg, err := Load(path)
 	if err != nil {
@@ -93,7 +97,7 @@ func TestEditorPersistsOptionalSwitchesAndCustomMediaPort(t *testing.T) {
 	}
 	settings := cfg.Cloud115.Settings()
 	settings.MediaEnabled, settings.NavidromeEnabled = true, true
-	settings.MediaListen, settings.MediaBaseURL = "127.0.0.1:18081", "http://127.0.0.1:18081"
+	settings.MediaBaseURL = "http://127.0.0.1:18081"
 	settings.NavidromeURL, settings.NavidromeMountRoot = "http://127.0.0.1:4533", "/music"
 	if _, err := editor.Cloud115(settings); err != nil {
 		t.Fatal(err)
@@ -102,7 +106,7 @@ func TestEditorPersistsOptionalSwitchesAndCustomMediaPort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved.Cloud115.Enabled || !saved.Cloud115.MediaEnabled || !saved.Cloud115.NavidromeEnabled || saved.Cloud115.MediaListen != settings.MediaListen || saved.Cloud115.MediaBaseURL != settings.MediaBaseURL {
+	if saved.Cloud115.Enabled || !saved.Cloud115.MediaEnabled || !saved.Cloud115.NavidromeEnabled || saved.Cloud115.MediaListen != mediaListen || saved.Cloud115.MediaBaseURL != settings.MediaBaseURL {
 		t.Fatal("the independent switches or custom media address did not survive a reload")
 	}
 	if saved.Storage.MusicDir != cfg.Storage.MusicDir || saved.Tasks[0].Directory != cfg.Tasks[0].Directory {
@@ -116,8 +120,116 @@ func TestEditorPersistsOptionalSwitchesAndCustomMediaPort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if disabled.Cloud115.MediaEnabled || disabled.Cloud115.NavidromeEnabled || disabled.Cloud115.NavidromeURL != settings.NavidromeURL || disabled.Cloud115.MediaListen != settings.MediaListen {
+	if disabled.Cloud115.MediaEnabled || disabled.Cloud115.NavidromeEnabled || disabled.Cloud115.NavidromeURL != settings.NavidromeURL || disabled.Cloud115.MediaListen != mediaListen {
 		t.Fatal("disabling an integration must preserve its saved addresses")
+	}
+}
+
+func TestCloudDeploymentEnvironmentSurvivesWebSavesWithoutPersistence(t *testing.T) {
+	environment := map[string]string{
+		"MELOPORT_115_CLIENT_ID":      " 987654321 ",
+		"MELOPORT_115_POLL_INTERVAL":  " 5m ",
+		"MELOPORT_115_TIMEOUT":        " 12s ",
+		"MELOPORT_MEDIA_LISTEN":       " 127.0.0.1:18082 ",
+		"MELOPORT_NAVIDROME_USERNAME": " environment-only-user ",
+	}
+	for name, value := range environment {
+		t.Setenv(name, value)
+	}
+	path := writeConfig(t, `cloud115:
+  client_id: "100197303" # Keep the legacy application.
+  access_token_env: LEGACY_115_TOKEN
+  poll_interval: 2m
+  timeout: 25s
+  media_listen: "127.0.0.1:18081"
+  navidrome_username: legacy-user
+  navidrome_password_env: LEGACY_NAVIDROME_PASSWORD
+tasks: []
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkEnvironment := func(cloud Cloud115) {
+		t.Helper()
+		if cloud.ClientID != "987654321" || cloud.PollInterval.Duration != 5*time.Minute || cloud.Timeout.Duration != 12*time.Second ||
+			cloud.MediaListen != "127.0.0.1:18082" || cloud.NavidromeUsername != "environment-only-user" ||
+			cloud.AccessTokenEnv != "LEGACY_115_TOKEN" || cloud.NavidromePasswordEnv != "LEGACY_NAVIDROME_PASSWORD" {
+			t.Fatal("deployment overrides or legacy credential aliases were lost")
+		}
+	}
+	checkEnvironment(cfg.Cloud115)
+	settings := cfg.Cloud115.Settings()
+	settings.Enabled, settings.TargetCID = true, "12345"
+	settings.MediaEnabled, settings.NavidromeEnabled, settings.NavidromePlaylistSync = true, true, true
+	settings.NavidromeURL, settings.NavidromeMountRoot = "http://127.0.0.1:4533", "/music"
+	editor := NewEditor(path)
+	saved, err := editor.Cloud115(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkEnvironment(saved.Cloud115)
+	saved, err = editor.Settings(SettingsInput{Timezone: "UTC", Schedule: DefaultSchedule, Quality: "lossless"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkEnvironment(saved.Cloud115)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"987654321", "environment-only-user", "127.0.0.1:18082", "poll_interval: 5m", "timeout: 12s"} {
+		if strings.Contains(string(raw), value) {
+			t.Fatal("a Web save persisted a deployment environment value")
+		}
+	}
+	if !strings.Contains(string(raw), "Keep the legacy application.") {
+		t.Fatal("a Web save removed a deployment comment")
+	}
+	for name := range environment {
+		t.Setenv(name, "")
+	}
+	legacy, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy.Cloud115.ClientID != "100197303" || legacy.Cloud115.PollInterval.Duration != 2*time.Minute ||
+		legacy.Cloud115.Timeout.Duration != 25*time.Second || legacy.Cloud115.MediaListen != "127.0.0.1:18081" || legacy.Cloud115.NavidromeUsername != "legacy-user" {
+		t.Fatal("Web saves changed the legacy deployment settings")
+	}
+}
+
+func TestCloudDeploymentEnvironmentValidationDoesNotEchoValues(t *testing.T) {
+	for _, name := range []string{"MELOPORT_115_CLIENT_ID", "MELOPORT_115_POLL_INTERVAL", "MELOPORT_115_TIMEOUT", "MELOPORT_MEDIA_LISTEN", "MELOPORT_NAVIDROME_USERNAME"} {
+		t.Setenv(name, "")
+	}
+	path := writeConfig(t, `cloud115:
+  enabled: true
+  target_cid: "12345"
+  media_enabled: true
+  navidrome_enabled: true
+  navidrome_playlist_sync: true
+  navidrome_url: http://127.0.0.1:4533
+  navidrome_mount_root: /music
+  navidrome_username: fixture-user
+tasks: []
+`)
+	for _, item := range []struct{ name, variable, value string }{
+		{"malformed interval", "MELOPORT_115_POLL_INTERVAL", "private-fixture-interval"},
+		{"short interval", "MELOPORT_115_POLL_INTERVAL", "14s"},
+		{"malformed timeout", "MELOPORT_115_TIMEOUT", "private-fixture-timeout"},
+		{"long timeout", "MELOPORT_115_TIMEOUT", "61s"},
+		{"invalid application", "MELOPORT_115_CLIENT_ID", "private-fixture-application"},
+		{"conflicting media listener", "MELOPORT_MEDIA_LISTEN", "127.0.0.1:8080"},
+		{"invalid sync username", "MELOPORT_NAVIDROME_USERNAME", "private-fixture\nusername"},
+	} {
+		t.Run(item.name, func(t *testing.T) {
+			t.Setenv(item.variable, item.value)
+			_, err := Load(path)
+			if err == nil || strings.Contains(err.Error(), item.value) {
+				t.Fatalf("invalid deployment setting was accepted or echoed: %v", err)
+			}
+		})
 	}
 }
 

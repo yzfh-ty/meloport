@@ -46,6 +46,41 @@ func cloud115Defaults() Cloud115 {
 	}
 }
 
+// applyEnvironment keeps deployment options outside the Web editor. Nonempty
+// process values override legacy YAML without being copied into the document.
+func (c *Cloud115) applyEnvironment() error {
+	for _, option := range []struct {
+		name  string
+		value *string
+	}{
+		{"MELOPORT_115_CLIENT_ID", &c.ClientID},
+		{"MELOPORT_MEDIA_LISTEN", &c.MediaListen},
+		{"MELOPORT_NAVIDROME_USERNAME", &c.NavidromeUsername},
+	} {
+		if value := strings.TrimSpace(os.Getenv(option.name)); value != "" {
+			*option.value = value
+		}
+	}
+	for _, option := range []struct {
+		name  string
+		value *Duration
+	}{
+		{"MELOPORT_115_POLL_INTERVAL", &c.PollInterval},
+		{"MELOPORT_115_TIMEOUT", &c.Timeout},
+	} {
+		value := strings.TrimSpace(os.Getenv(option.name))
+		if value == "" {
+			continue
+		}
+		duration, err := time.ParseDuration(value)
+		if err != nil {
+			return fmt.Errorf("%s must be a duration such as 15s or 1m", option.name)
+		}
+		option.value.Duration = duration
+	}
+	return nil
+}
+
 func (c *Config) validateCloud115(baseDir string) error {
 	cloud := &c.Cloud115
 	cloud.stagingDirInput, cloud.strmDirInput = cloud.StagingDir, cloud.STRMDir
@@ -104,7 +139,7 @@ func (c *Config) validateCloud115(baseDir string) error {
 			return errors.New("Navidrome playlist sync requires HTTPS for non-loopback URLs")
 		}
 		if strings.TrimSpace(cloud.NavidromeUsername) == "" || strings.ContainsAny(cloud.NavidromeUsername, "\x00\r\n") {
-			return errors.New("cloud115.navidrome_username is required for playlist sync")
+			return errors.New("configure MELOPORT_NAVIDROME_USERNAME before enabling Navidrome playlist sync")
 		}
 		if !envPattern.MatchString(cloud.NavidromePasswordEnv) {
 			return errors.New("cloud115.navidrome_password_env must name an environment variable")

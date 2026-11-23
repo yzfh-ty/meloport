@@ -155,6 +155,9 @@ func Load(path string) (*Config, error) {
 	if err := dec.Decode(&trailing); err != io.EOF {
 		return nil, errors.New("configuration must contain exactly one YAML document")
 	}
+	if err := cfg.Cloud115.applyEnvironment(); err != nil {
+		return nil, err
+	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return nil, errors.New("cannot resolve configuration path")

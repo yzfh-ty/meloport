@@ -860,23 +860,16 @@
                     </div>
                   </fieldset>
                   <details class="advanced-fields cloud-advanced">
-                    <summary>Navidrome 接入与媒体端口 <span id="cloud-navidrome-status">未启用</span></summary>
+                    <summary>播放器与 Navidrome <span id="cloud-navidrome-status">未启用</span></summary>
                     <label class="checkbox-field" for="cloud-media-enabled">
                       <input id="cloud-media-enabled" name="media_enabled" type="checkbox" />
                       <span><strong>启用独立媒体端口</strong><small>默认关闭。开启后提供 STRM 播放地址，也可用作 Navidrome 的反代入口。</small></span>
                     </label>
                     <fieldset id="cloud-media-fields" disabled>
-                      <div class="form-grid">
-                        <div class="field">
-                          <label for="cloud-media-listen">媒体反代监听地址</label>
-                          <input id="cloud-media-listen" name="media_listen" type="text" maxlength="255" placeholder="127.0.0.1:8081" aria-describedby="cloud-media-listen-hint" />
-                          <p id="cloud-media-listen-hint" class="field-hint">端口可修改，需与管理端口不同。开启并重启后才会监听。</p>
-                        </div>
-                        <div class="field">
-                          <label for="cloud-media-base-url">播放器访问地址</label>
-                          <input id="cloud-media-base-url" name="media_base_url" type="url" maxlength="2048" placeholder="http://127.0.0.1:8081" aria-describedby="cloud-media-hint" />
-                          <p id="cloud-media-hint" class="field-hint">STRM 会写入此地址。修改监听端口时同步调整；跨设备请填写播放器能访问的 HTTPS 反代地址。</p>
-                        </div>
+                      <div class="field">
+                        <label for="cloud-media-base-url">播放器访问地址</label>
+                        <input id="cloud-media-base-url" name="media_base_url" type="url" maxlength="2048" placeholder="http://127.0.0.1:8081" aria-describedby="cloud-media-hint" />
+                        <p id="cloud-media-hint" class="field-hint">STRM 会写入此地址。跨设备请填写播放器能访问的 HTTPS 反代地址。</p>
                       </div>
                     </fieldset>
                     <p id="cloud-media-runtime" class="field-hint" role="status">媒体端口未启动。</p>
@@ -890,24 +883,7 @@
                         <div class="field"><label for="cloud-navidrome-mount-root">Navidrome 中的音乐目录</label><input id="cloud-navidrome-mount-root" name="navidrome_mount_root" type="text" maxlength="4096" placeholder="/music" /></div>
                       </div>
                       <p class="field-hint">让 Navidrome 扫描本地音频；使用 115 时扫描 CD2 挂载的真实音频。302 直链播放需启用 Report Real Path，并关闭服务端转码和限码率。</p>
-                      <label class="checkbox-field" for="cloud-navidrome-playlist-sync"><input id="cloud-navidrome-playlist-sync" name="navidrome_playlist_sync" type="checkbox" /><span><strong>同步创建 Navidrome 榜单歌单</strong><small>默认关闭，需开启 115 交接。Navidrome 扫描完成后，再创建或更新榜单歌单。</small></span></label>
-                      <fieldset id="cloud-navidrome-credentials" disabled>
-                        <div class="form-grid">
-                          <div class="field"><label for="cloud-navidrome-username">Navidrome 用户名</label><input id="cloud-navidrome-username" name="navidrome_username" type="text" maxlength="255" autocomplete="username" /></div>
-                          <div class="field"><label for="cloud-navidrome-password-env">密码环境变量名</label><input id="cloud-navidrome-password-env" name="navidrome_password_env" type="text" maxlength="128" placeholder="MELOPORT_NAVIDROME_PASSWORD" autocomplete="off" /></div>
-                        </div>
-                      </fieldset>
-                    </fieldset>
-                  </details>
-                  <details class="advanced-fields cloud-advanced">
-                    <summary>115 高级设置 <span>授权与核对</span></summary>
-                    <fieldset id="cloud-advanced-fields" disabled>
-                      <div class="form-grid">
-                        <div class="field"><label for="cloud-client-id">115 应用 ID</label><input id="cloud-client-id" name="client_id" type="text" inputmode="numeric" maxlength="20" pattern="[0-9]{1,20}" placeholder="100197303" /></div>
-                        <div class="field"><label for="cloud-access-token-env">令牌环境变量名</label><input id="cloud-access-token-env" name="access_token_env" type="text" maxlength="128" placeholder="MELOPORT_115_ACCESS_TOKEN" /></div>
-                        <div class="field"><label for="cloud-poll-interval">自动核对间隔</label><input id="cloud-poll-interval" name="poll_interval" type="text" maxlength="30" placeholder="1m" /></div>
-                        <div class="field"><label for="cloud-timeout">115 请求超时</label><input id="cloud-timeout" name="timeout" type="text" maxlength="30" placeholder="15s" /></div>
-                      </div>
+                      <label class="checkbox-field" for="cloud-navidrome-playlist-sync"><input id="cloud-navidrome-playlist-sync" name="navidrome_playlist_sync" type="checkbox" /><span><strong>同步创建 Navidrome 榜单歌单</strong><small>默认关闭，需开启 115 交接并在服务端配置同步账号。Navidrome 扫描完成后，再创建或更新榜单歌单。</small></span></label>
                     </fieldset>
                   </details>
                 </fieldset>
@@ -941,6 +917,7 @@
                 </button>
                 <h1 id="settings-title" tabindex="-1">系统设置</h1>
               </div>
+              <span id="settings-key-status" class="status-badge status-neutral" role="status">正在读取解析密钥状态</span>
             </div>
             <div class="settings-layout">
               <section
@@ -1050,29 +1027,6 @@
                     </button>
                   </div>
                 </form>
-              </section>
-              <section class="panel key-panel" aria-labelledby="key-title">
-                <div class="settings-section-heading">
-                  <div class="key-symbol">
-                    <svg class="icon" aria-hidden="true">
-                      <use href="#icon-link" />
-                    </svg>
-                  </div>
-                  <h2 id="key-title">解析服务</h2>
-                  <span
-                    id="settings-key-status"
-                    class="status-badge status-neutral"
-                    >正在读取</span
-                  >
-                </div>
-                <p>
-                  ChKSz 用于取得音频地址；平台歌单与歌曲信息优先直接读取。
-                </p>
-                <div class="environment-label">密钥环境变量</div>
-                <code id="settings-key-env" class="environment-value">—</code>
-                <p class="field-hint">
-                  在本地配置的 api.key 或该环境变量中设置密钥，修改后重启服务。控制台不会显示实际密钥。
-                </p>
               </section>
               <div class="quiet-note">
                 <svg class="icon" aria-hidden="true">
