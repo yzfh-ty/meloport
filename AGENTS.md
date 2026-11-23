@@ -11,5 +11,5 @@
 - Keep user guides in `docs/`. Keep local design notes and reference clones under ignored `tmp/`. Do not commit caches, binaries, local configuration, keys or runtime data.
 - Use English Git commit messages. The project remote is `https://github.com/yzfh-ty/meloport.git`.
 - After completing and validating each change, create a local Git commit. Push only when the user requests it.
-- For Web UI development, use `scripts/dev.ps1 -Action dev`; it serves the three whitelisted source assets live. Restart this Go process after backend changes.
+- For Web UI development, use `scripts/dev.ps1 -Action dev`; it serves only explicitly whitelisted source assets live. Restart this Go process after backend changes.
 - Run `scripts/dev.ps1 -Action test` and build before delivery. Concurrency changes also need race checks when the local CGO toolchain is usable. Distinguish fixture verification from live upstream or real audio verification.

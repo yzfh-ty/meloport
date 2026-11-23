@@ -15,6 +15,7 @@ func TestEmbeddedAssets(t *testing.T) {
 		{"/", "text/html", "排行榜"},
 		{"/assets/app.css", "text/css", "prefers-reduced-motion"},
 		{"/assets/app.js", "text/javascript", "X-Meloport-Request"},
+		{"/assets/meloport-icon.png", "image/png", "\x89PNG\r\n\x1a\n"},
 	} {
 		t.Run(item.path, func(t *testing.T) {
 			request := httptest.NewRequest("GET", item.path, nil)
@@ -79,6 +80,13 @@ func TestLiveAssetDirectoryOverridesEmbeddedFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(directory, "config.yaml"), []byte("private"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	icon, err := assets.ReadFile("assets/meloport-icon.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "meloport-icon.png"), icon, 0600); err != nil {
+		t.Fatal(err)
+	}
 	handler := HandlerFromDirectory(directory)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/assets/app.js", nil))
@@ -87,6 +95,11 @@ func TestLiveAssetDirectoryOverridesEmbeddedFiles(t *testing.T) {
 	}
 	if response.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("live asset response is cacheable")
+	}
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/assets/meloport-icon.png", nil))
+	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "image/png" || response.Body.String() != string(icon) {
+		t.Fatal("live brand icon was not served intact with the correct content type")
 	}
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/config.yaml", nil))

@@ -9,7 +9,7 @@ import (
 	"os"
 )
 
-//go:embed assets/index.html assets/app.css assets/app.js
+//go:embed assets/index.html assets/app.css assets/app.js assets/meloport-icon.png
 var assets embed.FS
 
 // Handler exposes only the console entry point and its explicit static assets.
@@ -36,7 +36,7 @@ func ValidateDirectory(directory string) error {
 }
 
 // HandlerFromDirectory serves the embedded production assets when directory is
-// empty. In explicit development mode it reads only the three named assets from
+// empty. In explicit development mode it reads only the named assets from
 // directory on every request, so frontend edits take effect after a refresh.
 func HandlerFromDirectory(directory string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -53,6 +53,8 @@ func HandlerFromDirectory(directory string) http.Handler {
 			file, contentType = "app.css", "text/css; charset=utf-8"
 		case "/assets/app.js":
 			file, contentType = "app.js", "text/javascript; charset=utf-8"
+		case "/assets/meloport-icon.png":
+			file, contentType = "meloport-icon.png", "image/png"
 		default:
 			http.NotFound(w, r)
 			return
