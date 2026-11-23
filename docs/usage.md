@@ -64,11 +64,21 @@ Navidrome 在侧边栏的独立菜单中配置，包含接入开关、服务地�
 
 ## 本地开发
 
-双击 `start-test.cmd` 或运行 `scripts/dev.ps1 -Action dev -Config config.yaml`。在本地 `config.yaml` 的 `server.admin_password` 中填写测试密钥后，可直接启动并输入该密钥登录。改动网页资源后刷新浏览器，改动 Go 代码后重启开发服务。
+双击 `start-test.cmd` 或运行 `scripts/dev.ps1 -Action dev -Config config.yaml`。在本地 `config.yaml` 的 `server.admin_password` 中填写测试密钥后，可直接启动并输入该密钥登录。改动网页资源后刷新浏览器，改动 Go 代码或 YAML 后按 `Ctrl+C` 停止，再重启。脚本会校验已有配置，启动失败后等待按回车，便于双击运行时查看错误；自动化调用加 `-NoPause` 可直接返回非零退出码。
+
+```powershell
+.\start-test.cmd                     # 手动测试，Ctrl+C 停止
+.\start-test.cmd -Config "tmp\测试 配置.yaml"
+.\start-test.cmd -Check              # 自动启动检查，检查完自动停止
+```
+
+`-Check` 使用 `tmp/startup-check-*` 下的空任务配置、随机本机端口和进程内随机密钥，验证网页资源、鉴权、设置保存读回、退出登录和端口释放。不会修改现有 `config.yaml`、读取真实订阅或发起音乐平台请求；不能与 `-Config` 同用。日志和测试配置保存在对应的忽略目录。缺少 Go 或已有同一项目的开发服务正在运行时，会直接提示；不会停止其他进程。
 
 ```powershell
 .\scripts\dev.ps1 -Action test
 .\scripts\dev.ps1 -Action build
 ```
+
+`-Action test` 检查 `cmd/` 和 `internal/` 下的项目代码，排除 `tmp/` 中的旧实验程序；同时运行 Go 测试、`go vet` 和前端 Node 测试。未安装 Node.js 时会明确提示跳过前端测试，不影响 Go 程序的启动或构建。
 
 本地测试覆盖增量同步、标签、网页配置、115 核对导出和 Subsonic 反代。已使用 115 正式接口验证二维码申请和未扫码轮询。真实账号授权、CloudDrive2 上传和 Navidrome 客户端实际播放仍待联调。

@@ -112,7 +112,9 @@ tasks: []
 .\scripts\dev.ps1 -Action dev -Config config.yaml
 ```
 
-也可双击 `start-test.cmd`。修改网页资源后刷新浏览器，修改 Go 代码后重启开发服务。
+也可双击 `start-test.cmd`，或运行 `.\start-test.cmd -Config "路径含空格的配置.yaml"` 指定配置。修改网页资源后刷新浏览器，修改 Go 代码或 YAML 后按 `Ctrl+C` 停止，再重新启动。已有配置会先校验；启动失败时保留错误信息，自动化调用可加 `-NoPause`。
+
+运行 `.\start-test.cmd -Check` 可自动验证启动、网页资源、登录、设置保存与退出。检查使用 `tmp/` 下的隔离配置、随机本机端口和临时登录密钥，不读取真实订阅、不执行下载，结束后自动关闭自己的服务并检查端口释放。
 
 ```powershell
 .\scripts\dev.ps1 -Action test
