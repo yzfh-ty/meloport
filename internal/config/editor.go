@@ -240,7 +240,7 @@ func (e *Editor) update(change func(*yaml.Node) error) (*Config, error) {
 	}
 	if (e.activeCloud.Enabled || e.activeCloud.MediaEnabled) && !e.activeCloud.SameRuntime(candidate.Cloud115) {
 		// Until restart the running process still writes to the original
-		// staging and export trees, even if the YAML uses different ones.
+		// mount and export trees, even if the YAML uses different ones.
 		running := *candidate
 		running.Cloud115 = e.activeCloud
 		if err := running.validateCloud115(filepath.Dir(temporary)); err != nil {

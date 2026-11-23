@@ -1,4 +1,4 @@
-// Package cloudsync hands complete audio files to CD2 and confirms their 115 mappings.
+// Package cloudsync publishes complete local audio to a CloudDrive2 mount and verifies it on 115.
 package cloudsync
 
 import (
@@ -23,7 +23,7 @@ type DirectoryReader interface {
 }
 
 type Options struct {
-	TargetCID, StagingDir, STRMDir, MediaBaseURL string
+	TargetCID, MountDir, STRMDir, MediaBaseURL string
 }
 
 type Service struct {
@@ -38,8 +38,7 @@ func New(store *state.Store, client DirectoryReader, opts Options) *Service {
 	return &Service{store: store, client: client, opts: opts, stage: make(chan struct{}, 1), reconcile: make(chan struct{}, 1)}
 }
 
-// Ready reports whether a new download should wait for CD2 or 115.
-// A crash before the move normally leaves the working file available to retry.
+// Ready reports whether a file is already published or waiting for 115 verification.
 func (s *Service) Ready(ctx context.Context, taskID, provider, trackID string) (bool, error) {
 	select {
 	case s.stage <- struct{}{}:
@@ -58,26 +57,37 @@ func (s *Service) hasHandedOff(ctx context.Context, file state.CloudFile) (bool,
 	if file.Published || file.ID != "" {
 		return true, nil
 	}
-	// The working file remains in place until the move succeeds.
-	if info, err := os.Lstat(file.LocalPath); err == nil {
-		if !info.Mode().IsRegular() {
-			return false, errors.New("working 115 audio path is not a regular file")
+	if filepath.Clean(file.TargetPath) != filepath.Clean(filepath.Join(s.opts.MountDir, filepath.FromSlash(file.RelativePath))) {
+		if _, err := os.Lstat(file.LocalPath); err == nil {
+			return false, nil // Re-publish an unfinished legacy intent to the new mount.
 		}
-		return false, nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return false, errors.New("cannot inspect working audio for 115 handoff")
 	}
-	if info, err := os.Lstat(file.StagingPath); err == nil {
+	if info, err := os.Lstat(file.TargetPath); err == nil {
 		if !info.Mode().IsRegular() || info.Size() != file.Size {
-			return false, errors.New("CD2 staging file changed during handoff")
+			return false, errors.New("CloudDrive2 destination conflicts with the recorded audio; local file was preserved")
 		}
+		opened, err := os.Open(file.TargetPath)
+		if err != nil {
+			return false, err
+		}
+		digest := sha1.New()
+		current, statErr := opened.Stat()
+		n, readErr := io.Copy(digest, io.LimitReader(contextReader{ctx, opened}, file.Size+1))
+		_ = opened.Close()
+		if statErr != nil || !os.SameFile(info, current) || readErr != nil || n != file.Size || !strings.EqualFold(hex.EncodeToString(digest.Sum(nil)), file.SHA1) {
+			return false, errors.New("CloudDrive2 destination does not match the recorded audio; local file was preserved")
+		}
+	} else if errors.Is(err, os.ErrNotExist) {
+		if _, localErr := os.Lstat(file.LocalPath); localErr == nil {
+			return false, nil // Retry a copy interrupted before publication.
+		} else if !errors.Is(localErr, os.ErrNotExist) {
+			return false, errors.New("cannot inspect local audio for CloudDrive2 publication")
+		}
+		// Legacy move-based records may have lost both local paths after upload.
+		// Preserve their remote verification and download suppression semantics.
+		return true, nil
 	} else {
-		if errors.Is(err, os.ErrNotExist) {
-			// CD2 may have uploaded and consumed the file before publication
-			// was recorded. Wait for a remote match without asserting a move.
-			return true, nil
-		}
-		return false, errors.New("cannot inspect CD2 staging file")
+		return false, errors.New("cannot inspect CloudDrive2 destination")
 	}
 	if err := s.store.MarkCloudPublished(ctx, file); err != nil {
 		return false, err
@@ -85,8 +95,8 @@ func (s *Service) hasHandedOff(ctx context.Context, file state.CloudFile) (bool,
 	return true, nil
 }
 
-// Stage atomically moves verified tagged audio into CD2's watched directory.
-// The working and staging directories must be on the same filesystem.
+// Stage copies verified tagged audio into the configured CloudDrive2 mount.
+// Local downloads are retained; only a complete verified copy receives its final name.
 func (s *Service) Stage(ctx context.Context, item state.Download) (bool, error) {
 	select {
 	case s.stage <- struct{}{}:
@@ -111,38 +121,34 @@ func (s *Service) Stage(ctx context.Context, item state.Download) (bool, error) 
 		collection = item.TaskID // Legacy callers retain their old folder layout.
 	}
 	if (!legacyFolder && !safeComponent(item.Provider)) || !safeComponent(collection) || !safeComponent(name) || !filepath.IsAbs(item.Path) || item.Size <= 0 || item.Size == 1<<63-1 {
-		return false, errors.New("invalid 115 staging audio record")
+		return false, errors.New("invalid 115 mount audio record")
 	}
 	if item.TagPending || item.TagFingerprint == "" {
-		return false, errors.New("audio tags must finish before CD2 staging")
+		return false, errors.New("audio tags must finish before CloudDrive2 publication")
 	}
 	sha1sum, info, err := fingerprint(ctx, item)
 	if err != nil {
 		return false, err
 	}
 	folder := collection
-	if legacyFolder {
-		if err := ensureTaskDirectory(s.opts.StagingDir, collection); err != nil {
-			return false, fmt.Errorf("prepare CD2 staging directory: %w", err)
-		}
-	} else {
-		folder = filepath.Join(item.Provider, collection)
-	}
+	parts := []string{collection}
 	if !legacyFolder {
-		if err := ensureCollectionDirectory(s.opts.StagingDir, item.Provider, collection); err != nil {
-			return false, fmt.Errorf("prepare CD2 staging directory: %w", err)
-		}
+		folder = filepath.Join(item.Provider, collection)
+		parts = []string{item.Provider, collection}
 	}
-	stagedPath := filepath.Join(s.opts.StagingDir, folder, name)
-	if _, err := os.Lstat(stagedPath); !errors.Is(err, os.ErrNotExist) {
+	if err := ensureDirectories(s.opts.MountDir, parts, false); err != nil {
+		return false, fmt.Errorf("open CloudDrive2 mount; make sure the configured 115 target is mounted and writable: %w", err)
+	}
+	targetPath := filepath.Join(s.opts.MountDir, folder, name)
+	if _, err := os.Lstat(targetPath); !errors.Is(err, os.ErrNotExist) {
 		if err == nil {
-			return false, errors.New("CD2 staging already contains the audio filename; working file was preserved")
+			return false, errors.New("CloudDrive2 mount already contains the audio filename; local file was preserved")
 		}
-		return false, errors.New("cannot inspect CD2 staging destination")
+		return false, errors.New("cannot inspect CloudDrive2 mount destination")
 	}
 	file, err := s.store.SaveCloudIntent(ctx, state.CloudFile{
 		RootCID: s.opts.TargetCID, TaskID: item.TaskID, Provider: item.Provider, TrackID: item.TrackID,
-		LocalPath: item.Path, StagingPath: stagedPath, RelativePath: filepath.ToSlash(filepath.Join(folder, name)),
+		LocalPath: item.Path, TargetPath: targetPath, RelativePath: filepath.ToSlash(filepath.Join(folder, name)),
 		Size: item.Size, SHA1: sha1sum, MediaID: randomID(),
 	})
 	if err != nil {
@@ -153,12 +159,55 @@ func (s *Service) Stage(ctx context.Context, item state.Download) (bool, error) 
 	}
 	current, err := os.Lstat(item.Path)
 	if err != nil || !os.SameFile(info, current) || current.Size() != info.Size() || !current.ModTime().Equal(info.ModTime()) {
-		return false, errors.New("working audio changed before CD2 handoff")
+		return false, errors.New("local audio changed before CloudDrive2 publication")
 	}
-	if err := moveStaged(item.Path, stagedPath); err != nil {
-		return false, fmt.Errorf("move audio to CD2 staging; check directory access and same-filesystem paths: %w", err)
+	if err := copyMounted(ctx, item, info, targetPath); err != nil {
+		return false, fmt.Errorf("copy audio to CloudDrive2 mount; local file was preserved: %w", err)
 	}
 	return true, s.store.MarkCloudPublished(ctx, file)
+}
+
+func copyMounted(ctx context.Context, item state.Download, expected os.FileInfo, destination string) error {
+	source, err := os.Open(item.Path)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+	info, err := source.Stat()
+	if err != nil || !os.SameFile(expected, info) {
+		return errors.New("local audio changed before copying")
+	}
+	root, err := os.OpenRoot(filepath.Dir(destination))
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	temporary := ".meloport-" + randomID() + ".partial"
+	output, err := root.OpenFile(temporary, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = output.Close(); _ = root.Remove(temporary) }()
+	digest := sha256.New()
+	n, err := io.Copy(io.MultiWriter(output, digest), io.LimitReader(contextReader{ctx, source}, item.Size+1))
+	if err != nil {
+		return err
+	}
+	if n != item.Size || !strings.EqualFold(hex.EncodeToString(digest.Sum(nil)), item.SHA256) {
+		return errors.New("copied audio does not match its download record")
+	}
+	if err := output.Sync(); err != nil {
+		return err
+	}
+	if err := output.Close(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// The temporary file and final name are on the destination filesystem, so
+	// source and mount may be different volumes. Never overwrite existing audio.
+	return renameNoReplace(filepath.Join(filepath.Dir(destination), temporary), destination)
 }
 
 type contextReader struct {
@@ -176,7 +225,7 @@ func (r contextReader) Read(p []byte) (int, error) {
 func fingerprint(ctx context.Context, item state.Download) (string, os.FileInfo, error) {
 	info, err := os.Lstat(item.Path)
 	if err != nil || !info.Mode().IsRegular() || info.Size() != item.Size {
-		return "", nil, errors.New("working audio is missing or changed before CD2 staging")
+		return "", nil, errors.New("local audio is missing or changed before CloudDrive2 publication")
 	}
 	file, err := os.Open(item.Path)
 	if err != nil {
@@ -200,44 +249,33 @@ func fingerprint(ctx context.Context, item state.Download) (string, os.FileInfo,
 }
 
 func ensureTaskDirectory(rootDir, taskID string) error {
-	if !filepath.IsAbs(rootDir) || !safeComponent(taskID) {
-		return errors.New("invalid task directory path")
-	}
-	if err := os.MkdirAll(rootDir, 0o750); err != nil {
-		return err
-	}
-	root, err := os.OpenRoot(rootDir)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if root != nil {
-			_ = root.Close()
-		}
-	}()
-	if err := root.Mkdir(taskID, 0o750); err != nil && !errors.Is(err, os.ErrExist) {
-		return err
-	}
-	info, err := root.Lstat(taskID)
-	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return errors.New("task output path must be a real directory")
-	}
-	return nil
+	return ensureDirectories(rootDir, []string{taskID}, true)
 }
 
 func ensureCollectionDirectory(rootDir, platform, collection string) error {
-	if !filepath.IsAbs(rootDir) || !safeComponent(platform) || !safeComponent(collection) {
+	return ensureDirectories(rootDir, []string{platform, collection}, true)
+}
+
+func ensureDirectories(rootDir string, parts []string, createRoot bool) error {
+	if !filepath.IsAbs(rootDir) {
 		return errors.New("invalid cloud collection path")
 	}
-	if err := os.MkdirAll(rootDir, 0o750); err != nil {
-		return err
+	for _, name := range parts {
+		if !safeComponent(name) {
+			return errors.New("invalid cloud collection path")
+		}
+	}
+	if createRoot {
+		if err := os.MkdirAll(rootDir, 0o750); err != nil {
+			return err
+		}
 	}
 	root, err := os.OpenRoot(rootDir)
 	if err != nil {
 		return err
 	}
-	defer root.Close()
-	for _, name := range []string{platform, collection} {
+	defer func() { _ = root.Close() }()
+	for _, name := range parts {
 		if err := root.Mkdir(name, 0o750); err != nil && !errors.Is(err, os.ErrExist) {
 			return err
 		}

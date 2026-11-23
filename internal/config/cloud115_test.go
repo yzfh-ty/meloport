@@ -8,27 +8,31 @@ import (
 	"time"
 )
 
-func TestCloud115ConfigurationKeepsCD2AwayFromWorkFiles(t *testing.T) {
-	const cloud = "cloud115:\n  enabled: true\n  target_cid: '1234'\n"
+func TestCloud115ConfigurationKeepsCloudDrive2AwayFromWorkFiles(t *testing.T) {
+	const cloud = "cloud115:\n  enabled: true\n  target_cid: '1234'\n  mount_dir: data/115-mount\n"
 	valid := writeConfig(t, cloud+"  media_base_url: https://media.example.com/music/\ntasks: []\n")
 	cfg, err := Load(valid)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Cloud115.StagingDir != filepath.Join(filepath.Dir(valid), "data", "115-staging") ||
+	if cfg.Cloud115.MountDir != filepath.Join(filepath.Dir(valid), "data", "115-mount") ||
 		cfg.Cloud115.MediaBaseURL != "https://media.example.com/music" {
 		t.Fatalf("unexpected cloud settings: %+v", cfg.Cloud115)
 	}
 	for _, test := range []struct{ name, settings string }{
-		{"whole data tree", "  staging_dir: data\n"},
-		{"STRM under staging", "  strm_dir: data/115-staging/strm\n"},
+		{"whole data tree", "  mount_dir: data\n"},
+		{"STRM under mount", "  strm_dir: data/115-mount/strm\n"},
 		{"same listener", "  media_enabled: true\n  media_listen: '127.0.0.1:8080'\n"},
 		{"cleartext public address", "  media_base_url: http://media.example.com\n"},
 		{"relative media mount", "  media_enabled: true\n  navidrome_enabled: true\n  navidrome_url: http://127.0.0.1:4533\n  navidrome_mount_root: music/library\n"},
-		{"task under staging", "tasks:\n- id: songs\n  playlist: '123'\n  directory: ../115-staging/songs\n"},
+		{"task under mount", "tasks:\n- id: songs\n  playlist: '123'\n  directory: ../115-mount/songs\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := Load(writeConfig(t, cloud+test.settings)); err == nil {
+			base := cloud
+			if strings.Contains(test.settings, "  mount_dir:") {
+				base = strings.ReplaceAll(base, "  mount_dir: data/115-mount\n", "")
+			}
+			if _, err := Load(writeConfig(t, base+test.settings)); err == nil {
 				t.Fatalf("accepted invalid configuration: %s", test.name)
 			}
 		})
@@ -56,8 +60,31 @@ func TestOptionalIntegrationsDefaultToLocalDownloads(t *testing.T) {
 	if cfg.Cloud115.Enabled || cfg.Cloud115.MediaEnabled || cfg.Cloud115.NavidromeEnabled || cfg.Cloud115.NavidromePlaylistSync {
 		t.Fatal("optional integrations must remain disabled by default")
 	}
+	if cfg.Cloud115.MountDir != "" {
+		t.Fatal("an optional mount must not create a default local staging directory")
+	}
 	if len(cfg.Tasks) != 1 || !strings.HasPrefix(cfg.Tasks[0].Directory, cfg.Storage.MusicDir+string(filepath.Separator)) {
 		t.Fatal("a default subscription must save to the local music directory")
+	}
+}
+
+func TestLegacyUploadDirectoryIsNotSilentlyUsedAsAMount(t *testing.T) {
+	path := writeConfig(t, "cloud115:\n  staging_dir: old-local-upload\ntasks: []\n")
+	cfg, err := Load(path)
+	if err != nil || cfg.Cloud115.MountDir != "" {
+		t.Fatal("old local upload path was treated as a mount", err)
+	}
+	if _, err := Load(writeConfig(t, "cloud115:\n  enabled: true\n  target_cid: '1234'\n  staging_dir: old-local-upload\ntasks: []\n")); err == nil || !strings.Contains(err.Error(), "mount_dir") {
+		t.Fatal("legacy enabled setup needs an explicit mount path", err)
+	}
+	settings := cfg.Cloud115.Settings()
+	settings.MountDir = "mounted-115-target"
+	if _, err := NewEditor(path).Cloud115(settings); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(path)
+	if strings.Contains(string(raw), "staging_dir") || !strings.Contains(string(raw), "mount_dir: mounted-115-target") {
+		t.Fatal("Web save retained the unused staging configuration")
 	}
 }
 
@@ -69,7 +96,7 @@ func TestMediaAndNavidromeRequireExplicitSwitches(t *testing.T) {
 		{"disabled endpoints", "  media_listen: invalid\n  navidrome_url: incomplete\n  navidrome_mount_root: relative\n  navidrome_playlist_sync: true\n", true},
 		{"disabled address with credentials", "  navidrome_url: https://user:fixture@example.com\n", false},
 		{"disabled media address with a token query", "  media_base_url: https://media.example.com?token=fixture-only\n", false},
-		{"cloud without media", "  enabled: true\n  target_cid: '1234'\n  media_listen: invalid\n", true},
+		{"cloud without media", "  enabled: true\n  target_cid: '1234'\n  mount_dir: mount\n  media_listen: invalid\n", true},
 		{"media port only", "  media_enabled: true\n  media_listen: '127.0.0.1:18081'\n", true},
 		{"invalid media port", "  media_enabled: true\n  media_listen: '127.0.0.1:70000'\n", false},
 		{"management port conflict", "  media_enabled: true\n  media_listen: '127.0.0.1:8080'\n", false},
@@ -163,7 +190,7 @@ tasks: []
 	}
 	checkEnvironment(cfg.Cloud115)
 	settings := cfg.Cloud115.Settings()
-	settings.Enabled, settings.TargetCID = true, "12345"
+	settings.Enabled, settings.TargetCID, settings.MountDir = true, "12345", "mount"
 	settings.MediaEnabled, settings.NavidromeEnabled, settings.NavidromePlaylistSync = true, true, true
 	settings.NavidromeURL, settings.NavidromeMountRoot = "http://127.0.0.1:4533", "/music"
 	editor := NewEditor(path)

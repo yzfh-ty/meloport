@@ -2,6 +2,6 @@ package cloudsync
 
 import "golang.org/x/sys/unix"
 
-func moveStaged(from, to string) error {
+func renameNoReplace(from, to string) error {
 	return unix.RenameatxNp(unix.AT_FDCWD, from, unix.AT_FDCWD, to, unix.RENAME_EXCL)
 }

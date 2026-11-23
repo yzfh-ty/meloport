@@ -225,7 +225,7 @@ func TestLocalReuseTriesOlderValidRecordsAndPreservesUnknownDestination(t *testi
 	assertNoReuseTemps(t, task.Directory)
 }
 
-func TestReusedAudioCanMoveToCD2WithoutMovingItsSource(t *testing.T) {
+func TestReusedAudioCanMoveToCloudDrive2WithoutMovingItsSource(t *testing.T) {
 	p := &fakeProvider{playlist: playlist("1")}
 	_, store, _, task := setup(t, p)
 	downloader := &cloudDownloadFixture{}
@@ -234,13 +234,16 @@ func TestReusedAudioCanMoveToCD2WithoutMovingItsSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	original, _, _ := store.GetDownload(t.Context(), task.ID, "netease", "1")
-	opts := cloudsync.Options{TargetCID: "12345", StagingDir: filepath.Join(filepath.Dir(task.Directory), "staging"), STRMDir: filepath.Join(filepath.Dir(task.Directory), "strm"), MediaBaseURL: "https://media.example.test"}
+	opts := cloudsync.Options{TargetCID: "12345", MountDir: filepath.Join(filepath.Dir(task.Directory), "staging"), STRMDir: filepath.Join(filepath.Dir(task.Directory), "strm"), MediaBaseURL: "https://media.example.test"}
+	if err := os.Mkdir(opts.MountDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
 	engine.UseCloudStorage(cloudsync.New(store, cloudUploadFixture{}, opts))
 	next := task
 	next.ID, next.Directory = "new-cloud", filepath.Join(filepath.Dir(task.Directory), "new-cloud")
 	result, err := engine.Run(t.Context(), next)
 	if err != nil || result.Skipped != 1 || result.Downloaded != 0 || downloader.calls != 1 || len(p.resolved) != 1 {
-		t.Fatalf("reused CD2 handoff: %+v, %v", result, err)
+		t.Fatalf("reused CloudDrive2 handoff: %+v, %v", result, err)
 	}
 	cloud, found, err := store.GetCloudFile(t.Context(), opts.TargetCID, next.ID, "netease", "1")
 	if err != nil || !found || !cloud.Published {
@@ -248,11 +251,11 @@ func TestReusedAudioCanMoveToCD2WithoutMovingItsSource(t *testing.T) {
 	}
 	before, err := os.ReadFile(original.Path)
 	if err != nil {
-		t.Fatal("CD2 reuse moved the source subscription file")
+		t.Fatal("CloudDrive2 reuse moved the source subscription file")
 	}
-	after, err := os.ReadFile(cloud.StagingPath)
+	after, err := os.ReadFile(cloud.TargetPath)
 	if err != nil || !bytes.Equal(before, after) {
-		t.Fatal("CD2 did not receive the reused audio")
+		t.Fatal("CloudDrive2 did not receive the reused audio")
 	}
 }
 

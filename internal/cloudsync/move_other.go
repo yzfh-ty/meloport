@@ -4,6 +4,6 @@ package cloudsync
 
 import "errors"
 
-func moveStaged(_, _ string) error {
-	return errors.New("atomic CD2 staging is not supported on this operating system")
+func renameNoReplace(_, _ string) error {
+	return errors.New("atomic CloudDrive2 publication is not supported on this operating system")
 }

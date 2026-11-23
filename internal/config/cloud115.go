@@ -19,7 +19,8 @@ type Cloud115 struct {
 	AccessTokenEnv        string   `yaml:"access_token_env"`
 	ClientID              string   `yaml:"client_id"`
 	TargetCID             string   `yaml:"target_cid"`
-	StagingDir            string   `yaml:"staging_dir"`
+	MountDir              string   `yaml:"mount_dir"`
+	LegacyStagingDir      string   `yaml:"staging_dir,omitempty" json:"-"` // Read old YAML without treating a local cache as a mount.
 	STRMDir               string   `yaml:"strm_dir"`
 	MediaEnabled          bool     `yaml:"media_enabled"`
 	MediaListen           string   `yaml:"media_listen"`
@@ -32,15 +33,15 @@ type Cloud115 struct {
 	NavidromePlaylistSync bool     `yaml:"navidrome_playlist_sync"`
 	PollInterval          Duration `yaml:"poll_interval"`
 	Timeout               Duration `yaml:"timeout"`
-	stagingDirInput       string
+	mountDirInput         string
 	strmDirInput          string
 }
 
 func cloud115Defaults() Cloud115 {
 	return Cloud115{
 		AccessTokenEnv: "MELOPORT_115_ACCESS_TOKEN", NavidromePasswordEnv: "MELOPORT_NAVIDROME_PASSWORD",
-		ClientID:   "100197303",
-		StagingDir: "data/115-staging", STRMDir: "data/strm",
+		ClientID:    "100197303",
+		STRMDir:     "data/strm",
 		MediaListen: "127.0.0.1:8081", MediaBaseURL: "http://127.0.0.1:8081",
 		PollInterval: Duration{time.Minute}, Timeout: Duration{15 * time.Second},
 	}
@@ -83,7 +84,7 @@ func (c *Cloud115) applyEnvironment() error {
 
 func (c *Config) validateCloud115(baseDir string) error {
 	cloud := &c.Cloud115
-	cloud.stagingDirInput, cloud.strmDirInput = cloud.StagingDir, cloud.STRMDir
+	cloud.mountDirInput, cloud.strmDirInput = cloud.MountDir, cloud.STRMDir
 	if cloud.NavidromePasswordEnv == "" {
 		cloud.NavidromePasswordEnv = "MELOPORT_NAVIDROME_PASSWORD"
 	}
@@ -148,28 +149,31 @@ func (c *Config) validateCloud115(baseDir string) error {
 	if !cloud.Enabled {
 		return nil
 	}
+	if strings.TrimSpace(cloud.MountDir) == "" {
+		return errors.New("configure cloud115.mount_dir with the CloudDrive2-mounted 115 target path; the old staging_dir local upload directory is no longer used")
+	}
 	var err error
-	if cloud.StagingDir, err = ResolveMusicDirectory(baseDir, cloud.StagingDir); err != nil {
-		return errors.New("cloud115.staging_dir must be a valid directory")
+	if cloud.MountDir, err = ResolveMusicDirectory(baseDir, cloud.MountDir); err != nil {
+		return errors.New("cloud115.mount_dir must be a valid directory")
 	}
 	if cloud.STRMDir, err = ResolveMusicDirectory(baseDir, cloud.STRMDir); err != nil {
 		return errors.New("cloud115.strm_dir must be a valid directory")
 	}
-	stage, err := physicalPath(cloud.StagingDir)
+	stage, err := physicalPath(cloud.MountDir)
 	if err != nil {
-		return errors.New("cannot resolve cloud115.staging_dir")
+		return errors.New("cannot resolve cloud115.mount_dir")
 	}
 	strm, err := physicalPath(cloud.STRMDir)
 	if err != nil {
 		return errors.New("cannot resolve cloud115.strm_dir")
 	}
 	if overlaps(stage, strm) {
-		return errors.New("cloud115.staging_dir and strm_dir must be separate trees")
+		return errors.New("cloud115.mount_dir and strm_dir must be separate trees")
 	}
 	check := func(path string) error {
 		physical, err := physicalPath(path)
 		if err != nil || overlaps(stage, physical) || overlaps(strm, physical) {
-			return errors.New("cloud115 staging and STRM directories must be separate from work files and state")
+			return errors.New("CloudDrive2 mount and STRM directories must be separate from work files and state")
 		}
 		return nil
 	}

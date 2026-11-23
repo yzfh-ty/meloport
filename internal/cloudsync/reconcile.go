@@ -82,7 +82,7 @@ func (s *Service) Reconcile(ctx context.Context) error {
 			}
 			matches := indexByName(entries)[segment]
 			if len(matches) == 0 {
-				missing = true // CD2 has not created this collection directory yet.
+				missing = true // CloudDrive2 has not created this collection directory yet.
 				break
 			}
 			if len(matches) != 1 || !matches[0].IsDir || matches[0].ID == "" || matches[0].ParentID != parentCID {
@@ -122,7 +122,7 @@ func (s *Service) confirmDirectory(ctx context.Context, cid string, files []stat
 		if err == nil {
 			matches := byName[name]
 			if len(matches) == 0 {
-				continue // Absence is normal while waiting for CD2 to upload.
+				continue // Absence is normal while waiting for CloudDrive2 to upload.
 			}
 			err = s.confirm(ctx, file, cid, matches)
 		}
@@ -140,7 +140,7 @@ func (s *Service) confirm(ctx context.Context, file state.CloudFile, cid string,
 		return fmt.Errorf("115 file for task %s track %s does not uniquely match the staged audio", file.TaskID, file.TrackID)
 	}
 	file.CID, file.ID, file.PickCode = cid, remote.ID, remote.PickCode
-	// Do not confirm an interrupted intent while Stage is retrying its move.
+	// Do not confirm an interrupted intent while Stage is retrying its copy.
 	// The comparison in ConfirmCloudFile also rejects a replaced intent.
 	select {
 	case s.stage <- struct{}{}:

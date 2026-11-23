@@ -48,7 +48,7 @@ type AudioResolver interface {
 	Resolve(context.Context, string, model.Track, string) (model.ResolvedTrack, error)
 }
 
-// CloudStorage owns an audio file once it is handed off to CD2.
+// CloudStorage owns an audio file once it is handed off to CloudDrive2.
 type CloudStorage interface {
 	Ready(ctx context.Context, taskID, provider, trackID string) (bool, error)
 	Stage(context.Context, state.Download) (bool, error)
@@ -386,10 +386,10 @@ func (e *Engine) stage(ctx context.Context, item state.Download) error {
 		return nil
 	}
 	if item.TagPending || item.TagFingerprint == "" {
-		return errors.New("CD2 handoff is waiting for completed audio tags")
+		return errors.New("CloudDrive2 handoff is waiting for completed audio tags")
 	}
 	if _, err := e.cloud.Stage(ctx, item); err != nil {
-		return fmt.Errorf("CD2 handoff: %w", err)
+		return fmt.Errorf("CloudDrive2 handoff: %w", err)
 	}
 	return nil
 }

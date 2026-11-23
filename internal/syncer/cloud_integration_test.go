@@ -48,7 +48,7 @@ func (d *cloudDownloadFixture) Download(ctx context.Context, audio model.Resolve
 	}, nil
 }
 
-func TestCloudSyncSurvivesCD2CleanupAndRestart(t *testing.T) {
+func TestCloudSyncSurvivesCloudDrive2CleanupAndRestart(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	database := filepath.Join(root, "cloud.db")
@@ -56,8 +56,11 @@ func TestCloudSyncSurvivesCD2CleanupAndRestart(t *testing.T) {
 	task := model.Task{ID: "favorites", Platform: "netease", PlaylistID: "123", Quality: "lossless", Directory: filepath.Join(root, "work")}
 	collection := model.CollectionFolder(task.ID, "收藏")
 	opts := cloudsync.Options{
-		TargetCID: rootCID, StagingDir: filepath.Join(root, "cd2"), STRMDir: filepath.Join(root, "strm"),
+		TargetCID: rootCID, MountDir: filepath.Join(root, "mounted-115"), STRMDir: filepath.Join(root, "strm"),
 		MediaBaseURL: "https://music.example.test",
+	}
+	if err := os.Mkdir(opts.MountDir, 0o750); err != nil {
+		t.Fatal(err)
 	}
 	remote := cloudUploadFixture{
 		rootCID: {{ID: "150", ParentID: rootCID, Name: task.Platform, IsDir: true}},
@@ -84,18 +87,20 @@ func TestCloudSyncSurvivesCD2CleanupAndRestart(t *testing.T) {
 		t.Fatalf("first sync = %+v, %v", first, err)
 	}
 	const readyName, incompleteName = "netease-1.flac", "netease-2.flac"
-	stagedPath := filepath.Join(opts.StagingDir, task.Platform, collection, readyName)
+	stagedPath := filepath.Join(opts.MountDir, task.Platform, collection, readyName)
 	staged, err := os.ReadFile(stagedPath)
 	if err != nil || string(staged) != "fLaC audio fixture for 1" {
 		t.Fatalf("read staged audio = %q, %v", staged, err)
 	}
-	assertCloudTestPathMissing(t, filepath.Join(task.Directory, readyName))
-	assertCloudTestPathMissing(t, filepath.Join(opts.StagingDir, task.Platform, collection, incompleteName))
+	if _, err := os.Stat(filepath.Join(task.Directory, readyName)); err != nil {
+		t.Fatal("local download was not retained", err)
+	}
+	assertCloudTestPathMissing(t, filepath.Join(opts.MountDir, task.Platform, collection, incompleteName))
 	if _, err := os.Stat(filepath.Join(task.Directory, incompleteName)); err != nil {
 		t.Fatalf("audio with unfinished tags was not retained in the working directory: %v", err)
 	}
 	if _, exists, err := store.GetCloudFile(ctx, rootCID, task.ID, "netease", "2"); err != nil || exists {
-		t.Fatalf("unexpected CD2 handoff for audio with unfinished tags: exists=%v, %v", exists, err)
+		t.Fatalf("unexpected CloudDrive2 handoff for audio with unfinished tags: exists=%v, %v", exists, err)
 	}
 	if err := service.Reconcile(ctx); err != nil {
 		t.Fatal(err)
@@ -110,12 +115,12 @@ func TestCloudSyncSurvivesCD2CleanupAndRestart(t *testing.T) {
 			t.Fatalf("%s = %+v, %v, downloads=%d resolves=%v", who, run, err, downloader.calls, provider.resolved)
 		}
 	}
-	assertSkipped("waiting for CD2")
+	assertSkipped("waiting for CloudDrive2")
 	remote[taskCID] = []cloud115.File{{
 		ID: "300", ParentID: taskCID, Name: readyName, PickCode: "fixtureABC", Size: int64(len(staged)),
 		SHA1: fmt.Sprintf("%x", sha1.Sum(staged)),
 	}}
-	// CD2 finished uploading and deleted the source before Meloport polled 115.
+	// CloudDrive2 finished uploading and deleted the source before Meloport polled 115.
 	if err := os.Remove(stagedPath); err != nil {
 		t.Fatal(err)
 	}

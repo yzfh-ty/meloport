@@ -11,7 +11,7 @@ import (
 type Cloud115Settings struct {
 	Enabled               bool   `json:"enabled"`
 	TargetCID             string `json:"target_cid"`
-	StagingDir            string `json:"staging_dir"`
+	MountDir              string `json:"mount_dir"`
 	STRMDir               string `json:"strm_dir"`
 	MediaEnabled          bool   `json:"media_enabled"`
 	MediaBaseURL          string `json:"media_base_url"`
@@ -22,16 +22,16 @@ type Cloud115Settings struct {
 }
 
 func (c Cloud115) Settings() Cloud115Settings {
-	stagingDir, strmDir := c.stagingDirInput, c.strmDirInput
-	if stagingDir == "" {
-		stagingDir = c.StagingDir
+	mountDir, strmDir := c.mountDirInput, c.strmDirInput
+	if mountDir == "" {
+		mountDir = c.MountDir
 	}
 	if strmDir == "" {
 		strmDir = c.STRMDir
 	}
 	return Cloud115Settings{
 		Enabled: c.Enabled, TargetCID: c.TargetCID,
-		StagingDir: stagingDir, STRMDir: strmDir, MediaEnabled: c.MediaEnabled, MediaBaseURL: c.MediaBaseURL,
+		MountDir: mountDir, STRMDir: strmDir, MediaEnabled: c.MediaEnabled, MediaBaseURL: c.MediaBaseURL,
 		NavidromeEnabled: c.NavidromeEnabled, NavidromeURL: c.NavidromeURL, NavidromeMountRoot: c.NavidromeMountRoot,
 		NavidromePlaylistSync: c.NavidromePlaylistSync,
 	}
@@ -44,7 +44,7 @@ func (c Cloud115) SameRuntime(other Cloud115) bool {
 		return false
 	}
 	if c.Enabled && (c.AccessTokenEnv != other.AccessTokenEnv || c.ClientID != other.ClientID || c.TargetCID != other.TargetCID ||
-		c.StagingDir != other.StagingDir || c.STRMDir != other.STRMDir || c.MediaBaseURL != other.MediaBaseURL ||
+		c.MountDir != other.MountDir || c.STRMDir != other.STRMDir || c.MediaBaseURL != other.MediaBaseURL ||
 		c.PollInterval != other.PollInterval || c.Timeout != other.Timeout) {
 		return false
 	}
@@ -80,11 +80,12 @@ func (e *Editor) Cloud115(input Cloud115Settings) (*Config, error) {
 			cloud = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 			setNode(root, "cloud115", cloud)
 		}
+		deleteField(cloud, "staging_dir")
 		setScalar(cloud, "enabled", boolText(input.Enabled), "!!bool")
 		setScalar(cloud, "media_enabled", boolText(input.MediaEnabled), "!!bool")
 		setScalar(cloud, "navidrome_enabled", boolText(input.NavidromeEnabled), "!!bool")
 		for _, entry := range []struct{ key, value string }{
-			{"target_cid", input.TargetCID}, {"staging_dir", input.StagingDir}, {"strm_dir", input.STRMDir},
+			{"target_cid", input.TargetCID}, {"mount_dir", input.MountDir}, {"strm_dir", input.STRMDir},
 			{"media_base_url", input.MediaBaseURL}, {"navidrome_url", input.NavidromeURL}, {"navidrome_mount_root", input.NavidromeMountRoot},
 		} {
 			setOptional(cloud, entry.key, entry.value)

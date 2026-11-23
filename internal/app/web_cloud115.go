@@ -279,7 +279,7 @@ func (c *webController) cloudReconcile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		c.logger.Warn("manual 115 reconciliation failed", "error", err)
-		webError(w, http.StatusBadGateway, "115 reconcile failed; check CD2, the target directory and service logs")
+		webError(w, http.StatusBadGateway, "115 reconcile failed; check CloudDrive2, the target directory and service logs")
 		return
 	}
 	stats, _, err := c.cloudFiles(ctx)

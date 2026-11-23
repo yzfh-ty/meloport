@@ -37,7 +37,7 @@ server:
   # For local development, set admin_password in your ignored config.yaml instead.
   # admin_password: "YOUR_LOCAL_TEST_PASSWORD"
 
-# Optional CD2 handoff, 115 verification and playback. Edit switches, paths and player URLs in the Web UI.
+# Optional publication through a CloudDrive2 mount, 115 verification and playback.
 # Deployment settings below remain compatible with YAML; prefer the documented environment overrides.
 # Restart after changes; Web QR login is held in process memory.
 cloud115:
@@ -47,8 +47,9 @@ cloud115:
   navidrome_playlist_sync: false # Publish playlist/ranking subscriptions from local music or 115; no cloud requirement.
   client_id: "100197303" # MELOPORT_115_CLIENT_ID takes precedence.
   access_token_env: MELOPORT_115_ACCESS_TOKEN # Legacy token variable alias; never store the token here.
-  # target_cid: "123456" # Dedicated non-root 115 directory that CD2 uploads into.
-  staging_dir: data/115-staging # CD2 watches this tree. Same filesystem as task directories.
+  # target_cid: "123456" # Dedicated non-root 115 target; select it after QR login.
+  # mount_dir: "X:/115/Music" # Existing CloudDrive2 mount path corresponding to target_cid.
+  # Local audio is retained. No extra staging directory or same-volume requirement.
   strm_dir: data/strm
   media_listen: "127.0.0.1:8081" # MELOPORT_MEDIA_LISTEN takes precedence.
   media_base_url: "http://127.0.0.1:8081" # Use the HTTPS address reachable by remote players.

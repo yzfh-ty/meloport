@@ -43,7 +43,7 @@ Meloport 是一个基于 Go 的音乐歌单同步工具，将歌单订阅、定�
 | ♻️ 本地音频复用 | 校验已登记歌曲的版本与文件完整性，在不同订阅间复用音频，减少重复解析和下载 |
 | 🏷️ 标签与封面 | 补齐歌名、歌手、专辑、封面和歌词，支持筛选缺失信息并重试补全 |
 | 🖥️ 内置 Web 控制台 | 单个 Go 程序提供订阅管理、歌曲检索、运行记录与系统设置 |
-| ☁️ 115 与 STRM | 可选由 CD2 上传到 115，核对远端文件后导出 STRM |
+| ☁️ 115 与 STRM | 可选由 CloudDrive2 上传到 115，核对远端文件后导出 STRM |
 | 🎧 Navidrome 接入 | 支持接入 Navidrome，并将订阅同步为媒体库中的歌单；本地模式也可使用 |
 
 ## 快速开始
@@ -91,10 +91,10 @@ tasks: []
 默认使用本地下载模式。115 交接、独立媒体端口、Navidrome 接入和歌单同步均需手动开启。
 
 - **本地音乐库**：订阅歌曲下载到本地，交给自己的音乐播放器或媒体服务管理。
-- **115 + CD2 + STRM**：Meloport 下载音频并交给 CD2 上传，核对 115 远端文件后生成 STRM。
+- **115 + CloudDrive2 + STRM**：Meloport 下载音频并交给 CloudDrive2 上传，核对 115 远端文件后生成 STRM。
 - **Navidrome**：接入已有服务，可将普通歌单订阅和排行榜同步为 Navidrome 歌单。
 
-目录配置、开关说明与排错步骤见 [115 / STRM / Navidrome 配置指南](docs/115-strm.md)。真实账号授权、CD2 上传与 Navidrome 客户端实际播放仍需联调，详见[验证范围](docs/usage.md#本地开发)。
+目录配置、开关说明与排错步骤见 [115 / STRM / Navidrome 配置指南](docs/115-strm.md)。真实账号授权、CloudDrive2 上传与 Navidrome 客户端实际播放仍需联调，详见[验证范围](docs/usage.md#本地开发)。
 
 ## 文档
 
@@ -103,7 +103,7 @@ tasks: []
 | [使用指南](docs/usage.md) | 添加订阅、配置 ChKSz Key、增量复用、标签补全与命令行操作 |
 | [控制台登录](docs/login.md) | 管理员密钥、环境变量、会话与 Linux / WSL 配置 |
 | [配置示例](config.example.yaml) | 完整 YAML 字段、平台 Cookie 环境变量与任务规则 |
-| [115 / STRM / Navidrome](docs/115-strm.md) | CD2 交接、远端核对、播放入口与媒体库接入 |
+| [115 / STRM / Navidrome](docs/115-strm.md) | CloudDrive2 交接、远端核对、播放入口与媒体库接入 |
 | [第三方组件与许可证](docs/THIRD_PARTY.md) | 依赖组件和许可证说明 |
 
 ## 本地开发

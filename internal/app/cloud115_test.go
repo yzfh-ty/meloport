@@ -276,7 +276,7 @@ func TestCLICloudCommandsRejectDisabledOrMissingCredentialsBeforeOpeningState(t 
 		{name: "disabled", diagnostic: "enable cloud115"},
 		{
 			name:       "missing token",
-			settings:   "cloud115:\n  enabled: true\n  target_cid: '12345'\n  access_token_env: MELOPORT_115_TEST_ACCESS_TOKEN\n",
+			settings:   "cloud115:\n  enabled: true\n  target_cid: '12345'\n  mount_dir: mount\n  access_token_env: MELOPORT_115_TEST_ACCESS_TOKEN\n",
 			diagnostic: "set the 115 access token in MELOPORT_115_TEST_ACCESS_TOKEN",
 		},
 	} {

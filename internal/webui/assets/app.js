@@ -1395,6 +1395,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const cloudEnabled = $('cloud-enabled').checked;
     $('cloud-storage-fields').disabled = !cloudEnabled;
     $('cloud-target-cid').required = cloudEnabled;
+    $('cloud-mount-dir').required = cloudEnabled;
     const connected = state.cloud.data?.session_authenticated || state.cloud.data?.token_configured;
     $('cloud-browse').disabled = !connected || Boolean(state.cloud.operation);
     $('cloud-browse').title = connected ? '' : '请先扫码登录 115 网盘';
@@ -1544,10 +1545,10 @@ document.addEventListener('DOMContentLoaded', () => {
     show('cloud-empty', rows.length === 0);
     text('cloud-empty-title', data.runtime_enabled ? '暂无导出记录' : 'STRM 导出未启用');
     text('cloud-empty-description', data.runtime_enabled
-      ? connected ? '运行订阅任务，待 CD2 完成上传后即可生成。'
-        : data.stats?.confirmed > 0 ? '已有确认的音频，可先修复 STRM；核对新的 CD2 上传需先登录。'
-          : '先扫码登录，再核对 CD2 已上传的音频。'
-      : '当前仅下载到本地。需要 CD2 上传和 STRM 时再开启 115 交接。');
+      ? connected ? '运行订阅任务，待 CloudDrive2 完成上传后即可生成。'
+        : data.stats?.confirmed > 0 ? '已有确认的音频，可先修复 STRM；核对新的 CloudDrive2 上传需先登录。'
+          : '先扫码登录，再核对 CloudDrive2 已上传的音频。'
+      : '当前仅下载到本地。需要 CloudDrive2 上传和 STRM 时再开启 115 交接。');
     $('cloud-empty').classList.toggle('cloud-empty-setup', !data.runtime_enabled);
     show('cloud-pagination', lastPage > 0 || Boolean(data.files_truncated));
     text('cloud-file-count', `${start + 1}–${start + rows.length} / ${files.length} 条记录${data.files_truncated ? '（仅显示前 100 条）' : ''}`);
@@ -1626,6 +1627,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (settings.enabled && !/^[1-9][0-9]{0,19}$/.test(settings.target_cid)) {
       cloudFeedback('cloud-settings-error', '启用 115 时，请填写非根目录的数字 CID。');
       $('cloud-target-cid').focus();
+      return;
+    }
+    if (settings.enabled && !settings.mount_dir) {
+      cloudFeedback('cloud-settings-error', '启用 115 时，请填写 CloudDrive2 挂载的目标文件夹路径。');
+      $('cloud-mount-dir').focus();
       return;
     }
     cloudAction($('cloud-save'), 'save', '正在保存', async () => {

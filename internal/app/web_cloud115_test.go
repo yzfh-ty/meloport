@@ -36,7 +36,7 @@ func TestCloudWebSettingsRequireRestartAndProtectLiveStaging(t *testing.T) {
 	webStatus(t, webRequest(t, f, http.MethodGet, path+"/directories", nil), http.StatusConflict)
 
 	settings := f.cfg.Cloud115.Settings()
-	settings.Enabled, settings.TargetCID = true, "12345"
+	settings.Enabled, settings.TargetCID, settings.MountDir = true, "12345", "cloud-mount"
 	putFixtureCloudSettings(t, f, settings)
 	var overview cloudOverviewView
 	resp := webRequest(t, f, http.MethodGet, path, nil)
@@ -44,7 +44,7 @@ func TestCloudWebSettingsRequireRestartAndProtectLiveStaging(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &overview); err != nil {
 		t.Fatal(err)
 	}
-	if overview.RuntimeEnabled || !overview.RestartRequired || overview.Settings.TargetCID != "12345" || overview.Settings.StagingDir != settings.StagingDir {
+	if overview.RuntimeEnabled || !overview.RestartRequired || overview.Settings.TargetCID != "12345" || overview.Settings.MountDir != settings.MountDir {
 		t.Fatalf("incorrect saved settings or runtime state: %+v", overview)
 	}
 	webStatus(t, webRequest(t, f, http.MethodPut, path+"/settings", `{"access_token":"private-fixture"}`), http.StatusBadRequest)
@@ -59,7 +59,7 @@ func TestCloudWebSettingsRequireRestartAndProtectLiveStaging(t *testing.T) {
 	putFixtureCloudSettings(t, f, settings)
 	edit := config.SettingsInput{
 		Timezone: f.cfg.Timezone, Schedule: f.cfg.Schedule, Quality: f.cfg.Quality,
-		MusicDir: &settings.StagingDir,
+		MusicDir: &settings.MountDir,
 	}
 	webStatus(t, webRequest(t, f, http.MethodPut, "/api/settings", edit), http.StatusBadRequest)
 }
@@ -153,7 +153,7 @@ func TestCloudWebKeepsDeploymentSettingsOnTheServer(t *testing.T) {
 		t.Fatal("Web status exposed deployment environment values")
 	}
 	settings := f.cfg.Cloud115.Settings()
-	settings.Enabled, settings.TargetCID = true, "12345"
+	settings.Enabled, settings.TargetCID, settings.MountDir = true, "12345", "cloud-mount"
 	putFixtureCloudSettings(t, f, settings)
 	saved, err := config.Load(f.path)
 	if err != nil || saved.Cloud115.ClientID != "987654321" || saved.Cloud115.NavidromeUsername != "web-hidden-deployment-user" {
@@ -186,7 +186,7 @@ func TestCloudWebKeepsNavidromePlaylistSyncEnabledWhen115IsOff(t *testing.T) {
 	if local.Enabled || !local.NavidromePlaylistSync {
 		t.Fatal("local mode cannot retain Navidrome playlist publication")
 	}
-	settings.Enabled, settings.TargetCID = true, "12345"
+	settings.Enabled, settings.TargetCID, settings.MountDir = true, "12345", "cloud-mount"
 	putFixtureCloudSettings(t, f, settings)
 	settings.Enabled = false
 	putFixtureCloudSettings(t, f, settings)
@@ -342,7 +342,7 @@ func TestCloudDirectoryPickerWorksBeforeHandoffIsConfigured(t *testing.T) {
 func TestCloudWebLoginReconcileAndLogout(t *testing.T) {
 	f := newWebFixture(t)
 	settings := f.cfg.Cloud115.Settings()
-	settings.Enabled, settings.TargetCID = true, "12345"
+	settings.Enabled, settings.TargetCID, settings.MountDir = true, "12345", "cloud-mount"
 	putFixtureCloudSettings(t, f, settings)
 	startCloudWebFixture(t, f)
 	cloud := f.control.cloud
@@ -391,7 +391,7 @@ func TestCloudWebLoginReconcileAndLogout(t *testing.T) {
 	const privatePickCode = "fixture-pick-code-do-not-serialize"
 	file, err := f.store.SaveCloudIntent(t.Context(), state.CloudFile{
 		RootCID: "12345", TaskID: "daily", Provider: "netease", TrackID: "1",
-		LocalPath: "fake-work", StagingPath: "fake-stage", RelativePath: "daily/曲名.flac",
+		LocalPath: "fake-work", TargetPath: "fake-stage", RelativePath: "daily/曲名.flac",
 		Size: 128, MediaID: virtualID, SHA1: strings.Repeat("a", 40),
 	})
 	if err != nil {

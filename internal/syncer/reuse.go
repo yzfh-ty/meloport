@@ -19,7 +19,7 @@ import (
 )
 
 // reuseDownload copies verified local audio into this subscription's directory.
-// Separate files keep later tag repairs and CD2 moves from affecting the source
+// Separate files keep later tag repairs and CloudDrive2 moves from affecting the source
 // subscription. No audio resolution or network download is needed.
 func (e *Engine) reuseDownload(ctx context.Context, task model.Task, track *model.Track, provider, directory, collection string, previous state.Download) (state.Download, bool, error) {
 	candidates, err := e.store.FindDownloads(ctx, provider, track.ID)

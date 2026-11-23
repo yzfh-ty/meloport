@@ -122,7 +122,7 @@ func TestNavidromePublisherSupportsLocalAndCloudPlaylistsAndRankings(t *testing.
 					t.Cleanup(func() { _ = store.Close() })
 					_, err = store.SaveCloudIntent(t.Context(), state.CloudFile{
 						RootCID: cfg.TargetCID, TaskID: task.ID, Provider: item.Provider, TrackID: item.TrackID,
-						LocalPath: item.Path, StagingPath: filepath.Join(root, "staging", filepath.FromSlash(relative)),
+						LocalPath: item.Path, TargetPath: filepath.Join(root, "staging", filepath.FromSlash(relative)),
 						RelativePath: relative, Size: item.Size, SHA1: strings.Repeat("a", 40), MediaID: "fixture-media-id",
 					})
 					if err != nil {

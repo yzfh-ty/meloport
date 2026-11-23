@@ -34,7 +34,7 @@ func newCloudRuntime(cfg config.Cloud115, client *cloud115.Client, store *state.
 			drive.environment = client
 		}
 		service = cloudsync.New(store, drive, cloudsync.Options{
-			TargetCID: cfg.TargetCID, StagingDir: cfg.StagingDir, STRMDir: cfg.STRMDir, MediaBaseURL: cfg.MediaBaseURL,
+			TargetCID: cfg.TargetCID, MountDir: cfg.MountDir, STRMDir: cfg.STRMDir, MediaBaseURL: cfg.MediaBaseURL,
 		})
 		login = newCloudLogin(cfg)
 	}

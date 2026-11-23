@@ -143,7 +143,7 @@ test('disabled integrations preserve their addresses while saving explicit off s
 
 test('integration page saves preserve the other page and do not submit its draft', () => {
   const saved = {
-    enabled: true, target_cid: '12345', staging_dir: 'staging', strm_dir: 'strm',
+    enabled: true, target_cid: '12345', mount_dir: 'mounted-115', strm_dir: 'strm',
     media_enabled: true, media_base_url: 'https://media.example.com',
     navidrome_enabled: true, navidrome_url: 'http://127.0.0.1:4533',
     navidrome_mount_root: '/music', navidrome_playlist_sync: false,
@@ -151,7 +151,7 @@ test('integration page saves preserve the other page and do not submit its draft
   const cloudInputs = [
     { name: 'enabled', type: 'checkbox', checked: true },
     { name: 'target_cid', type: 'text', value: ' 67890 ' },
-    { name: 'staging_dir', type: 'text', value: 'staging-reviewed' },
+    { name: 'mount_dir', type: 'text', value: 'mount-reviewed' },
     { name: 'strm_dir', type: 'text', value: 'strm-reviewed' },
   ];
   const navidromeInputs = [
@@ -172,7 +172,7 @@ test('integration page saves preserve the other page and do not submit its draft
   assert.equal(cloudSaved.media_base_url, saved.media_base_url);
   const navidromeSaved = context.read({ querySelectorAll: () => navidromeInputs }, cloudSaved);
   assert.equal(navidromeSaved.target_cid, '67890');
-  assert.equal(navidromeSaved.staging_dir, 'staging-reviewed');
+  assert.equal(navidromeSaved.mount_dir, 'mount-reviewed');
   assert.equal(navidromeSaved.strm_dir, 'strm-reviewed');
   assert.equal(navidromeSaved.navidrome_enabled, false);
   assert.equal(navidromeSaved.navidrome_url, 'http://127.0.0.1:4534');

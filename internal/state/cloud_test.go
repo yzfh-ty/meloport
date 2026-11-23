@@ -25,7 +25,7 @@ func TestCloudMigrationFromV3PreservesState(t *testing.T) {
 	}
 	cloud, err := store.SaveCloudIntent(ctx, CloudFile{
 		RootCID: "123", TaskID: download.TaskID, Provider: download.Provider, TrackID: download.TrackID,
-		LocalPath: download.Path, StagingPath: "staging/old.flac", RelativePath: "old.flac",
+		LocalPath: download.Path, TargetPath: "staging/old.flac", RelativePath: "old.flac",
 		Size: download.Size, SHA1: "0123456789012345678901234567890123456789", MediaID: "existing-media",
 	})
 	if err != nil {

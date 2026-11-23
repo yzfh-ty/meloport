@@ -807,7 +807,7 @@
               <div class="panel-heading">
                 <div>
                   <h2 id="cloud-export-title">STRM 导出</h2>
-                  <p>核对 CD2 已上传的音频，生成或修复对应的 STRM 文件。<a class="text-link" href="#navidrome">配置媒体入口</a></p>
+                  <p>核对通过 CloudDrive2 挂载目录上传的音频，生成或修复对应的 STRM 文件。<a class="text-link" href="#navidrome">配置媒体入口</a></p>
                 </div>
                 <button id="cloud-reconcile" class="button button-primary" type="button" disabled><svg class="icon" aria-hidden="true"><use href="#icon-refresh" /></svg>核对并生成</button>
               </div>
@@ -819,7 +819,7 @@
               <p id="cloud-reconcile-result" class="cloud-feedback" role="status" hidden></p>
               <div id="cloud-empty" class="empty-state compact" hidden>
                 <h3 id="cloud-empty-title">暂无导出记录</h3>
-                <p id="cloud-empty-description">运行订阅任务后，等待 CD2 上传音频到 115。</p>
+                <p id="cloud-empty-description">运行订阅任务后，等待 CloudDrive2 上传音频到 115。</p>
               </div>
               <table id="cloud-table" class="data-table cloud-table" hidden>
                 <thead><tr><th scope="col">音频</th><th scope="col">任务</th><th scope="col">导出状态</th></tr></thead>
@@ -835,12 +835,12 @@
             </section>
 
             <section class="panel settings-panel" aria-labelledby="cloud-settings-title">
-              <div class="panel-heading"><div><h2 id="cloud-settings-title" tabindex="-1">网盘交接设置</h2><p>默认下载到本地。开启后由 CD2 上传，核对完成后导出 STRM。</p></div></div>
+              <div class="panel-heading"><div><h2 id="cloud-settings-title" tabindex="-1">网盘交接设置</h2><p>默认下载到本地。开启后由 CloudDrive2 上传，核对完成后导出 STRM。</p></div></div>
               <form id="cloud-settings" class="padded-form integration-form" novalidate>
                 <fieldset id="cloud-fields" disabled>
                   <label class="checkbox-field cloud-enable" for="cloud-enabled">
                     <input type="checkbox" id="cloud-enabled" name="enabled" />
-                    <span><strong>启用 115 网盘交接与 STRM</strong><small>默认关闭。开启后，完整音频会移入 CD2 暂存目录，适用于所有订阅任务。</small></span>
+                    <span><strong>启用 115 网盘交接与 STRM</strong><small>默认关闭。开启后，将完整音频复制到 CloudDrive2 挂载的目标目录，本地下载文件保留。</small></span>
                   </label>
                     <div class="field">
                       <label for="cloud-target-cid">115 目标文件夹</label>
@@ -849,14 +849,14 @@
                         <button id="cloud-browse" class="button button-secondary" type="button" disabled><svg class="icon" aria-hidden="true"><use href="#icon-folder" /></svg>选择文件夹</button>
                       </div>
                       <p id="cloud-target-selection" class="field-hint" role="status" hidden></p>
-                      <p id="cloud-target-hint" class="field-hint">扫码登录后可浏览选择，也可手动填写目录 ID。CD2 应上传到同一文件夹并保留子目录。</p>
+                      <p id="cloud-target-hint" class="field-hint">扫码登录后可浏览选择，也可手动填写目录 ID。CloudDrive2 应上传到同一文件夹并保留子目录。</p>
                     </div>
                   <fieldset id="cloud-storage-fields" disabled>
                     <div class="form-grid">
                       <div class="field">
-                        <label for="cloud-staging-dir">CD2 暂存目录</label>
-                        <input id="cloud-staging-dir" name="staging_dir" type="text" maxlength="4096" placeholder="data/115-staging" />
-                        <p class="field-hint">设为 CD2 的上传监控目录，与本地音乐目录使用同一文件系统。</p>
+                        <label for="cloud-mount-dir">CloudDrive2 挂载目录</label>
+                        <input id="cloud-mount-dir" name="mount_dir" type="text" maxlength="4096" placeholder="填写所选 115 文件夹在本机的挂载路径" aria-describedby="cloud-mount-hint" />
+                        <p id="cloud-mount-hint" class="field-hint">填写上方 115 目标文件夹在本机的挂载路径。程序从下载目录复制完整音频到此处，无需额外暂存目录。</p>
                       </div>
                       <div class="field">
                         <label for="cloud-strm-dir">STRM 导出目录</label>
@@ -889,7 +889,7 @@
 
             <section class="panel settings-panel" aria-labelledby="navidrome-settings-title">
               <div class="panel-heading">
-                <div><h2 id="navidrome-settings-title">接入设置</h2><p>连接 Navidrome，使用本地音乐或 CD2 挂载的真实音频目录。</p></div>
+                <div><h2 id="navidrome-settings-title">接入设置</h2><p>连接 Navidrome，使用本地音乐或 CloudDrive2 挂载的真实音频目录。</p></div>
                 <span id="navidrome-runtime-status" class="status-badge status-neutral" role="status">正在读取</span>
               </div>
               <form id="navidrome-settings" class="padded-form integration-form" novalidate>
@@ -903,8 +903,8 @@
                       <div class="field"><label for="navidrome-url">Navidrome 服务地址</label><input id="navidrome-url" name="navidrome_url" type="url" maxlength="2048" placeholder="http://127.0.0.1:4533" /></div>
                       <div class="field"><label for="navidrome-mount-root">Navidrome 中的音乐目录</label><input id="navidrome-mount-root" name="navidrome_mount_root" type="text" maxlength="4096" placeholder="/music" aria-describedby="navidrome-root-hint" /></div>
                     </div>
-                    <p id="navidrome-root-hint" class="field-hint">本地模式对应下载根目录在 Navidrome 中的路径；115 模式对应 CD2 挂载的目标目录。</p>
-                    <p class="field-hint">让 Navidrome 扫描本地音频；使用 115 时扫描 CD2 挂载的真实音频。302 直链播放需启用 Report Real Path，并关闭服务端转码和限码率。</p>
+                    <p id="navidrome-root-hint" class="field-hint">本地模式对应下载根目录在 Navidrome 中的路径；115 模式对应 CloudDrive2 挂载的目标目录。</p>
+                    <p class="field-hint">让 Navidrome 扫描本地音频；使用 115 时扫描 CloudDrive2 挂载的真实音频。302 直链播放需启用 Report Real Path，并关闭服务端转码和限码率。</p>
                     <label class="checkbox-field" for="navidrome-playlist-sync"><input id="navidrome-playlist-sync" name="navidrome_playlist_sync" type="checkbox" /><span><strong>同步创建 Navidrome 歌单</strong><small>将订阅歌单和排行榜同步到 Navidrome，本地音乐也可使用。配置同步账号后，歌曲入库即可在下次任务同步时创建或更新。</small></span></label>
                   </fieldset>
 
