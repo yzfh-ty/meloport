@@ -12,6 +12,11 @@ import (
 //go:embed assets/index.html assets/app.css assets/app.js assets/meloport-icon.png
 var assets embed.FS
 
+// ContentSecurityPolicy keeps scripts and requests same-origin. Images may
+// additionally use only the public music-platform CDNs accepted by the native
+// playlist readers; QR images continue to use locally fetched blobs.
+const ContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: https://music.126.net https://*.music.126.net https://y.gtimg.cn https://music-file.y.qq.com https://imge.kugou.com https://imgessl.kugou.com https://kgimg.com https://*.kgimg.com; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+
 // Handler exposes only the console entry point and its explicit static assets.
 // API routes belong to the host's separate /api/ mux.
 func Handler() http.Handler {
@@ -103,7 +108,7 @@ func HandlerFromDirectory(directory string) http.Handler {
 		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+		w.Header().Set("Content-Security-Policy", ContentSecurityPolicy)
 		if r.Method == http.MethodGet {
 			_, _ = w.Write(body)
 		}

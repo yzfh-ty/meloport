@@ -5,6 +5,48 @@ const test = require('node:test');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, 'assets/app.js'), 'utf8');
 
+function discoveryFixture(request) {
+  const state = { discovery: { platform: 'netease', category: '', sort: 'hot', catalog: { netease: { categories: [], sorts: [{ id: 'hot', name: '最热' }] }, qq: { categories: [], sorts: [{ id: 'hot', name: '最热' }] } }, page: 1, items: [], loaded: false, loadedKey: '', loading: false, controller: null } };
+  const context = { state, request, AbortController, URLSearchParams, renderPlaylists() {}, renderPlaylistControls() {}, renderDiscoveryNavigation() {} };
+  vm.createContext(context);
+  vm.runInContext(source.slice(source.indexOf('  function playlistPageKey('), source.indexOf('  function loadDiscovery(')) + '\nthis.load = loadPlaylists;', context);
+  return context;
+}
+
+test('discovery ignores stale platform results and retains the selected native page', async () => {
+  const pending = [];
+  const context = discoveryFixture((url, options) => new Promise(resolve => pending.push({ url, options, resolve })));
+  const first = context.load(1);
+  context.state.discovery.platform = 'qq';
+  const second = context.load(2);
+  assert.equal(pending[0].options.signal.aborted, true);
+  pending[0].resolve({ playlists: { items: [{ id: 'old-platform' }], page: 1, has_more: false } });
+  await first;
+  assert.equal(context.state.discovery.loading, true);
+  assert.equal(context.state.discovery.items.length, 0);
+  pending[1].resolve({ playlists: { items: [{ id: 'qq-list' }], page: 2, total: 70, has_more: true } });
+  await second;
+  assert.equal(context.state.discovery.items[0].id, 'qq-list');
+  assert.equal(context.state.discovery.page, 2);
+  assert.equal(context.state.discovery.loading, false);
+});
+
+test('returning to a loaded discovery page cancels pending pagination', async () => {
+  const pending = [];
+  const context = discoveryFixture((url, options) => new Promise(resolve => pending.push({ options, resolve })));
+  const initial = context.load(1);
+  pending[0].resolve({ playlists: { items: [{ id: 'page-one' }], page: 1, has_more: true } });
+  await initial;
+  const next = context.load(2);
+  await context.load(1);
+  assert.equal(pending[1].options.signal.aborted, true);
+  pending[1].resolve({ playlists: { items: [{ id: 'page-two' }], page: 2, has_more: false } });
+  await next;
+  assert.equal(context.state.discovery.items[0].id, 'page-one');
+  assert.equal(context.state.discovery.page, 1);
+  assert.equal(context.state.discovery.loading, false);
+});
+
 function directoryFixture(request) {
   const nodes = new Map();
   const node = id => {

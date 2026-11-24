@@ -41,26 +41,28 @@ type serviceOptions struct {
 }
 
 type webController struct {
-	mu        sync.RWMutex
-	changes   sync.Mutex
-	cfg       *config.Config
-	tasks     map[string]config.Task
-	entries   map[string]cron.EntryID
-	scheduler *cron.Cron
-	queue     *taskQueue
-	store     *state.Store
-	metadata  *provider.Manager
-	audio     audioLibrary
-	editor    *config.Editor
-	logger    *slog.Logger
-	webDir    string
-	configDir string
-	stopping  bool
-	cloud     *cloudRuntime
-	cloudBoot config.Cloud115
-	auth      *managementAuth
-	rankingMu sync.Mutex
-	rankings  map[string]rankingCache
+	mu               sync.RWMutex
+	changes          sync.Mutex
+	cfg              *config.Config
+	tasks            map[string]config.Task
+	entries          map[string]cron.EntryID
+	scheduler        *cron.Cron
+	queue            *taskQueue
+	store            *state.Store
+	metadata         *provider.Manager
+	audio            audioLibrary
+	editor           *config.Editor
+	logger           *slog.Logger
+	webDir           string
+	configDir        string
+	stopping         bool
+	cloud            *cloudRuntime
+	cloudBoot        config.Cloud115
+	auth             *managementAuth
+	rankingMu        sync.Mutex
+	rankings         map[string]rankingCache
+	playlistMu       sync.Mutex
+	playlistCatalogs map[string]playlistCatalogCache
 	// Protected by changes. Keep task and storage edits clear of a running repair.
 	audioActiveTask string
 }
@@ -72,6 +74,7 @@ type rankingCache struct {
 
 func newWebController(cfg *config.Config, tasks []config.Task, queue *taskQueue, logger *slog.Logger, options serviceOptions) *webController {
 	c := &webController{cfg: cfg, queue: queue, logger: logger, store: options.Store, metadata: options.Metadata, audio: options.Audio, webDir: options.WebDir, tasks: make(map[string]config.Task), entries: make(map[string]cron.EntryID), scheduler: cron.New(cron.WithLocation(cfg.Location)), rankings: make(map[string]rankingCache)}
+	c.playlistCatalogs = make(map[string]playlistCatalogCache)
 	c.cloud, c.cloudBoot = options.Cloud, cfg.Cloud115
 	// Browsing and QR authorization must work before a handoff target is set.
 	// This creates no listener, worker, or upstream request until used explicitly.
@@ -215,6 +218,9 @@ func (c *webController) handler(health http.Handler, ready *atomic.Bool) http.Ha
 	mux.HandleFunc("GET /api/search", c.search)
 	mux.HandleFunc("GET /api/rankings", c.rankingsHandler)
 	mux.HandleFunc("GET /api/rankings/{platform}/{id}", c.rankingDetail)
+	mux.HandleFunc("GET /api/playlists/catalog", c.playlistCatalogHandler)
+	mux.HandleFunc("GET /api/playlists", c.playlistsHandler)
+	mux.HandleFunc("GET /api/playlists/{platform}/{id}", c.playlistDetail)
 	mux.HandleFunc("GET /api/audio", c.listAudio)
 	mux.HandleFunc("POST /api/audio/{task}/{platform}/{track}/retag", c.retagAudio)
 	mux.HandleFunc("PUT /api/settings", c.settings)
@@ -237,7 +243,7 @@ func (c *webController) handler(health http.Handler, ready *atomic.Bool) http.Ha
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		w.Header().Set("Content-Security-Policy", webui.ContentSecurityPolicy)
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			w.Header().Set("Cache-Control", "no-store")
 			if !loopbackHost(r.Host) {
@@ -256,7 +262,7 @@ func (c *webController) handler(health http.Handler, ready *atomic.Bool) http.Ha
 				webError(w, 403, "115 management requests require the Meloport request header")
 				return
 			}
-			if r.URL.Path == "/api/search" || r.URL.Path == "/api/rankings" || strings.HasPrefix(r.URL.Path, "/api/rankings/") || strings.HasSuffix(r.URL.Path, "/playlist") {
+			if r.URL.Path == "/api/search" || r.URL.Path == "/api/rankings" || strings.HasPrefix(r.URL.Path, "/api/rankings/") || r.URL.Path == "/api/playlists" || strings.HasPrefix(r.URL.Path, "/api/playlists/") || strings.HasSuffix(r.URL.Path, "/playlist") {
 				if r.Header.Get("X-Meloport-Request") != "1" {
 					webError(w, 403, "metadata requests require the Meloport request header")
 					return

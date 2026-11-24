@@ -457,6 +457,9 @@ func (c *Client) chain(ctx context.Context, identity, gcid, chain string) (model
 }
 
 func (c *Client) global(ctx context.Context, identity, gcid string) (model.Playlist, error) {
+	if currentCollectionID.MatchString(gcid) {
+		return c.currentCollection(ctx, identity, gcid)
+	}
 	q := baseParameters()
 	q.Set("specialid", "0")
 	q.Set("global_specialid", gcid)
@@ -837,8 +840,11 @@ func (c *Client) buildPlaylist(ctx context.Context, identity, name string, raw [
 }
 
 func embeddedTrack(item map[string]any, hash string) (model.Track, bool) {
-	name := html.UnescapeString(platform.Text(item, "songname"))
+	name := html.UnescapeString(platform.Text(item, "songname", "remark"))
 	artists := platform.Artists(item["authors"])
+	if len(artists) == 0 {
+		artists = platform.Artists(item["singerinfo"])
+	}
 	if len(artists) == 0 {
 		artists = splitArtists(platform.Text(item, "author_name", "singername"))
 	}
@@ -846,9 +852,15 @@ func embeddedTrack(item map[string]any, hash string) (model.Track, bool) {
 		artists[i] = html.UnescapeString(artists[i])
 	}
 	album := html.UnescapeString(platform.Text(item, "album_name"))
+	if album == "" {
+		album = html.UnescapeString(platform.Text(platform.Object(item["albuminfo"]), "name"))
+	}
 	ms, ok := platform.Integer(item["timelength"])
 	if !ok {
 		ms, ok = platform.Integer(item["duration"])
+	}
+	if !ok {
+		ms, ok = platform.Integer(item["timelen"])
 	}
 	if strings.TrimSpace(name) == "" || len(artists) == 0 || strings.TrimSpace(album) == "" || !ok || ms <= 0 || ms > 24*60*60*1000 {
 		return model.Track{}, false
@@ -904,6 +916,7 @@ func songCover(item map[string]any) string {
 		platform.Text(platform.Object(audio["trans_param"]), "union_cover"),
 		platform.Text(item, "img"),
 		platform.Text(item, "imgurl"),
+		platform.Text(item, "cover"),
 	} {
 		if cover := model.CanonicalCoverURL(strings.ReplaceAll(html.UnescapeString(value), "{size}", "800")); cover != "" {
 			return cover

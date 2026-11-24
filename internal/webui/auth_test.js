@@ -22,7 +22,7 @@ test('locking an expired session hides management, stops polling and clears the 
   let aborted = 0, canceledCloud = false, cleared = false;
   const controller = { abort: () => { aborted++; } };
   const state = { authenticated: true, overview: { tasks: [{}] }, route: 'settings', overviewVersion: 3, overviewController: controller, previewController: controller,
-    search: { controller }, rankings: { controller }, audio: { controller }, cloud: { controller }, pollTimer: 123, overviewPromise: {} };
+    search: { controller }, rankings: { controller }, discovery: { controller }, audio: { controller }, cloud: { controller }, pollTimer: 123, overviewPromise: {} };
   const nodes = new Map();
   const node = (id) => { if (!nodes.has(id)) nodes.set(id, { value: 'previous-password', replaceChildren() {} }); return nodes.get(id); };
   const document = { title: '', querySelectorAll: () => [] };
@@ -39,6 +39,6 @@ test('locking an expired session hides management, stops polling and clears the 
   assert.equal(node('login-password').value, '');
   assert.equal(node('login-error').text, '登录已过期');
   assert.equal(node('login-status').text, '');
-  assert.equal(aborted, 6);
+  assert.equal(aborted, 7);
   assert.ok(cleared && canceledCloud);
 });

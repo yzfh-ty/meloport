@@ -33,6 +33,9 @@ type webTestSource struct {
 	playlists, searches atomic.Int32
 	rankings            atomic.Int32
 	rankingReads        atomic.Int32
+	catalogReads        atomic.Int32
+	playlistPages       atomic.Int32
+	emptyDiscovery      atomic.Bool
 	fail                atomic.Bool
 }
 

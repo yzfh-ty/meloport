@@ -45,13 +45,13 @@ func TestEmbeddedAssets(t *testing.T) {
 	}
 }
 
-func TestRankingsControlsAreEmbeddedWithExistingThemeTokens(t *testing.T) {
+func TestDiscoveryControlsAreEmbeddedWithExistingThemeTokens(t *testing.T) {
 	cases := []struct {
 		path     string
 		required []string
 	}{
-		{"/", []string{`data-view="rankings"`, `data-nav="rankings"`, `id="rankings-platform"`, `id="task-source-type"`, `id="task-source-id"`}},
-		{"/assets/app.js", []string{`/api/rankings?`, `source_type:`, `source_id:`, `subscribeRanking`}},
+		{"/", []string{`data-view="discover"`, `data-nav="discover"`, `id="discovery-platform"`, `id="discovery-kind"`, `id="playlists-category"`, `id="task-source-type"`, `id="task-source-id"`}},
+		{"/assets/app.js", []string{`/api/rankings?`, `/api/playlists?`, `source_type:`, `source_id:`, `subscribeCollection`}},
 		{"/assets/app.css", []string{`var(--accent)`, `.segmented-control`, `.ranking-table`, `@container (max-width: 720px)`}},
 	}
 	handler := Handler()

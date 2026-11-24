@@ -180,9 +180,9 @@
               <svg class="icon" aria-hidden="true"><use href="#icon-search" /></svg>
               <span class="nav-label">歌曲检索</span>
             </a>
-            <a href="#rankings" data-nav="rankings" aria-label="排行榜" title="排行榜">
+            <a href="#discover" data-nav="discover" aria-label="音乐发现" title="音乐发现">
               <svg class="icon" aria-hidden="true"><use href="#icon-list" /></svg>
-              <span class="nav-label">排行榜</span>
+              <span class="nav-label">音乐发现</span>
             </a>
             <a href="#cloud115" data-nav="cloud115" aria-label="115 与 STRM" title="115 与 STRM">
               <svg class="icon" aria-hidden="true"><use href="#icon-cloud" /></svg>
@@ -553,15 +553,15 @@
           </section>
 
           <section
-            id="view-rankings"
-            data-view="rankings"
-            aria-labelledby="rankings-title"
+            id="view-discover"
+            data-view="discover"
+            aria-labelledby="discover-title"
             hidden
           >
             <div class="page-heading">
               <div class="page-title-row">
                 <button
-                  id="mobile-menu-rankings"
+                  id="mobile-menu-discover"
                   class="icon-button mobile-menu-button"
                   type="button"
                   aria-label="打开导航"
@@ -571,27 +571,72 @@
                 >
                   <svg class="icon" aria-hidden="true"><use href="#icon-menu" /></svg>
                 </button>
-                <h1 id="rankings-title" tabindex="-1">排行榜</h1>
+                <h1 id="discover-title" tabindex="-1">音乐发现</h1>
               </div>
-              <button id="rankings-refresh" class="button button-secondary" type="button">
-                <svg class="icon" aria-hidden="true"><use href="#icon-refresh" /></svg>刷新榜单
+              <button id="discovery-refresh" class="button button-secondary" type="button">
+                <svg class="icon" aria-hidden="true"><use href="#icon-refresh" /></svg>刷新列表
               </button>
             </div>
-            <section class="panel rankings-panel" aria-label="平台排行榜">
-              <div class="ranking-toolbar">
-                <div class="segmented-control" id="rankings-platform" role="tablist" aria-label="音乐平台">
-                  <button type="button" role="tab" aria-selected="true" data-platform="netease">网易云音乐</button>
-                  <button type="button" role="tab" aria-selected="false" data-platform="qq">QQ 音乐</button>
-                  <button type="button" role="tab" aria-selected="false" data-platform="kugou">酷狗音乐</button>
+            <section class="panel discovery-panel" aria-label="发现歌单与排行榜">
+              <div class="discovery-toolbar">
+                <div class="segmented-control discovery-kind" id="discovery-kind" role="tablist" aria-label="内容类型">
+                  <button id="discovery-playlists-tab" type="button" role="tab" aria-selected="true" aria-controls="discovery-playlists" data-kind="playlists">歌单</button>
+                  <button id="discovery-rankings-tab" type="button" role="tab" aria-selected="false" aria-controls="discovery-rankings" tabindex="-1" data-kind="rankings">排行榜</button>
                 </div>
-                <div class="ranking-filters">
-                  <label class="sr-only" for="rankings-filter">筛选榜单</label>
-                  <svg class="icon" aria-hidden="true"><use href="#icon-search" /></svg>
-                  <input id="rankings-filter" type="search" placeholder="搜索榜单" autocomplete="off" />
-                  <label class="sr-only" for="rankings-category">榜单分类</label>
-                  <select id="rankings-category"><option value="">全部分类</option></select>
+                <div class="segmented-control" id="discovery-platform" role="group" aria-label="音乐平台">
+                  <button type="button" aria-pressed="true" data-platform="netease">网易云音乐</button>
+                  <button type="button" aria-pressed="false" data-platform="qq">QQ 音乐</button>
+                  <button type="button" aria-pressed="false" data-platform="kugou">酷狗音乐</button>
                 </div>
               </div>
+              <div id="discovery-playlists" role="tabpanel" aria-labelledby="discovery-playlists-tab">
+                <div class="discovery-filters">
+                  <div class="field">
+                    <label for="playlists-category">歌单分类</label>
+                    <select id="playlists-category"><option value="">全部分类</option></select>
+                  </div>
+                  <div class="field">
+                    <label for="playlists-sort">排序</label>
+                    <select id="playlists-sort"><option value="">等待读取</option></select>
+                  </div>
+                  <div class="field discovery-keyword">
+                    <label for="playlists-filter">筛选本页歌单</label>
+                    <input id="playlists-filter" type="search" maxlength="100" placeholder="歌单名称、作者或标签" autocomplete="off" />
+                  </div>
+                </div>
+                <div id="playlists-error" class="inline-error ranking-error" role="alert" hidden>
+                  <span id="playlists-error-message"></span>
+                  <button id="playlists-retry" class="button button-small button-secondary" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-refresh" /></svg>重试</button>
+                </div>
+                <div id="playlists-loading" class="loading-state" role="status" hidden><span class="spinner"></span>正在读取平台歌单…</div>
+                <div id="playlists-empty" class="empty-state compact" hidden>
+                  <div class="empty-icon"><svg class="icon" aria-hidden="true"><use href="#icon-list" /></svg></div>
+                  <h3>当前分类暂无歌单</h3><p>尝试选择其他分类或排序。</p>
+                </div>
+                <table id="playlists-table" class="data-table playlist-table" hidden>
+                  <thead><tr><th scope="col">歌单</th><th scope="col">作者</th><th scope="col">歌曲数</th><th scope="col">播放量</th><th scope="col" class="actions-heading">操作</th></tr></thead>
+                  <tbody id="playlists-body"></tbody>
+                </table>
+                <div class="panel-footer pagination discovery-pagination">
+                  <span id="playlists-summary" role="status">等待读取歌单</span>
+                  <div>
+                    <button id="playlists-prev" class="button button-small button-secondary" type="button" disabled><svg class="icon" aria-hidden="true"><use href="#icon-chevron-left" /></svg>上一页</button>
+                    <button id="playlists-next" class="button button-small button-secondary" type="button" disabled>下一页<svg class="icon" aria-hidden="true"><use href="#icon-chevron-right" /></svg></button>
+                  </div>
+                </div>
+              </div>
+              <div id="discovery-rankings" class="rankings-panel" role="tabpanel" aria-labelledby="discovery-rankings-tab" hidden>
+                <div class="ranking-toolbar">
+                  <div class="ranking-filters">
+                    <div class="ranking-keyword">
+                      <label class="sr-only" for="rankings-filter">筛选榜单</label>
+                      <svg class="icon" aria-hidden="true"><use href="#icon-search" /></svg>
+                      <input id="rankings-filter" type="search" placeholder="搜索榜单" autocomplete="off" />
+                    </div>
+                    <label class="sr-only" for="rankings-category">榜单分类</label>
+                    <select id="rankings-category"><option value="">全部分类</option></select>
+                  </div>
+                </div>
               <div id="rankings-error" class="inline-error ranking-error" role="alert" hidden>
                 <span id="rankings-error-message"></span>
                 <button id="rankings-retry" class="button button-small button-secondary" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-refresh" /></svg>重试</button>
@@ -610,6 +655,7 @@
                 <tbody id="rankings-body"></tbody>
               </table>
               <div class="panel-footer"><span id="rankings-summary">—</span><span id="rankings-fetched-at">—</span></div>
+              </div>
             </section>
           </section>
 
@@ -1130,7 +1176,7 @@
                 <option value="playlist">普通歌单</option>
                 <option value="ranking">排行榜</option>
               </select>
-              <p class="field-hint">排行榜会随平台当前榜单周期同步。</p>
+              <p id="task-source-type-hint" class="field-hint" hidden>排行榜会随平台当前榜单周期同步。</p>
             </div>
             <div id="task-playlist-field" class="field">
               <label for="task-playlist"
@@ -1154,7 +1200,7 @@
               <label for="task-source-id">排行榜 ID <span class="required-mark">*</span></label>
               <input id="task-source-id" name="source_id" type="text" inputmode="numeric" maxlength="20" placeholder="输入排行榜 ID" aria-describedby="task-source-id-hint task-source-id-error" />
               <span id="task-source-id-error" class="field-error" hidden></span>
-              <p id="task-source-id-hint" class="field-hint">排行榜 ID 来自排行榜页面，平台之间不能混用。</p>
+              <p id="task-source-id-hint" class="field-hint">排行榜 ID 来自音乐发现中的排行榜，平台之间不能混用。</p>
             </div>
             <details class="advanced-fields">
               <summary>
@@ -1283,7 +1329,7 @@
       </div>
       <div class="modal-footer">
         <button id="preview-subscribe" class="button button-primary" type="button" hidden>
-          <svg class="icon" aria-hidden="true"><use href="#icon-plus" /></svg>订阅排行榜
+          <svg class="icon" aria-hidden="true"><use href="#icon-plus" /></svg><span id="preview-subscribe-label">订阅</span>
         </button>
         <button
           class="button button-secondary"

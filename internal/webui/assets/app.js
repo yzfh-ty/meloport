@@ -110,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const $ = (id) => document.getElementById(id);
   const platforms = { netease: '网易云音乐', qq: 'QQ 音乐', kugou: '酷狗音乐' };
-  const titles = { overview: '任务概览', audio: '音频文件', cloud115: '115 与 STRM', navidrome: 'Navidrome', search: '歌曲检索', rankings: '排行榜', history: '运行记录', settings: '系统设置' };
+  const titles = { overview: '任务概览', audio: '音频文件', cloud115: '115 与 STRM', navidrome: 'Navidrome', search: '歌曲检索', discover: '音乐发现', history: '运行记录', settings: '系统设置' };
   const qualities = {
     netease: [['lossless', '无损 · lossless'], ['hires', 'Hi-Res · hires'], ['exhigh', '高品质 · exhigh'], ['standard', '标准 · standard'], ['jymaster', '母带 · jymaster'], ['jyeffect', '沉浸环绕 · jyeffect'], ['sky', '沉浸声 · sky']],
     qq: [['flac', '无损 · flac'], ['hires', 'Hi-Res · hires'], ['320k', '320 kbps · 320k'], ['128k', '128 kbps · 128k'], ['master', '母带 · master']],
@@ -132,9 +132,10 @@ document.addEventListener('DOMContentLoaded', () => {
     overview: null, route: '', editTask: null, deleteTask: null,
     taskSignature: '', historySignature: '', historyOptionsSignature: '', settingsDirty: false,
     busy: new Set(), overviewVersion: 0, overviewController: null, overviewPromise: null,
-    previewController: null, rankingDetail: null, pollTimer: null, toastTimer: null, dialogTriggers: new Map(),
+    previewController: null, discoveryDetail: null, pollTimer: null, toastTimer: null, dialogTriggers: new Map(),
     search: { keyword: '', platform: 'netease', offset: 0, limit: 20, tracks: [], loaded: false, loading: false, controller: null },
     rankings: { platform: 'netease', catalog: {}, loading: false, error: '', filter: '', category: '', controller: null },
+    discovery: { mode: 'playlists', platform: 'netease', catalog: {}, category: '', sort: '', filter: '', page: 1, items: [], total: -1, hasMore: false, loading: false, loaded: false, loadedKey: '', error: '', controller: null },
     audio: { filters: {}, offsets: [0], nextOffset: null, items: [], loading: false, error: '', controller: null, repairing: null },
     cloud: { data: null, dirty: false, page: 0, controller: null, operation: '', login: null, picker: null, directorySelection: null },
     navidrome: { dirty: false },
@@ -494,11 +495,12 @@ document.addEventListener('DOMContentLoaded', () => {
     $('task-quality').replaceChildren(...options);
     $('task-quality').value = options.some((option) => option.value === selected) ? selected : '';
     text('task-playlist-hint', platform === 'qq' ? '支持 QQ 音乐完整歌单链接或歌单 ID。' : platform === 'kugou' ? '支持酷狗歌单分享码、专题 ID（id_开头）或完整分享链接。' : '支持网易云完整歌单链接或歌单 ID。');
-    text('task-source-id-hint', `${platforms[platform] || '当前平台'}排行榜 ID 来自排行榜页面，平台之间不能混用。`);
+    text('task-source-id-hint', `${platforms[platform] || '当前平台'}排行榜 ID 来自音乐发现中的排行榜，平台之间不能混用。`);
   }
 
   function renderTaskSource() {
     const ranking = $('task-source-type').value === 'ranking';
+    show('task-source-type-hint', ranking);
     show('task-playlist-field', !ranking);
     show('task-ranking-field', ranking);
     $('task-playlist').required = !ranking;
@@ -608,7 +610,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const sourceType = task ? task.source_type || 'playlist' : preset ? preset.sourceType : 'playlist';
     let taskID = task ? task.id : '';
     if (preset && !task) {
-      const baseID = `rank-${preset.platform}-${preset.sourceId}`;
+      let identity = String(preset.sourceId);
+      if (identity.startsWith('https://')) {
+        try { identity = new URL(identity).searchParams.get('global_collection_id') || identity; } catch { /* Keep the validated source ID. */ }
+      }
+      identity = identity.replace(/[^A-Za-z0-9_-]+/g, '-').slice(-40);
+      const baseID = `${sourceType === 'ranking' ? 'rank' : 'list'}-${preset.platform}-${identity}`;
       taskID = baseID;
       let suffix = 2;
       while (state.overview && state.overview.tasks.some((item) => String(item.id).toLowerCase() === taskID.toLowerCase())) taskID = `${baseID}-${suffix++}`;
@@ -617,8 +624,8 @@ document.addEventListener('DOMContentLoaded', () => {
     $('task-id').readOnly = Boolean(task);
     $('task-platform').value = platform;
     $('task-source-type').value = sourceType;
-    $('task-playlist').value = task ? task.playlist || '' : '';
-    $('task-source-id').value = task ? task.source_id || '' : preset ? preset.sourceId : '';
+    $('task-playlist').value = task ? task.playlist || '' : preset && sourceType === 'playlist' ? preset.sourceId : '';
+    $('task-source-id').value = sourceType === 'ranking' ? task ? task.source_id || '' : preset ? preset.sourceId : '' : '';
     setSchedule('task', task ? task.schedule || '' : '');
     $('task-directory').value = task ? task.directory || '' : '';
     $('task-auto-downgrade').value = task?.auto_downgrade == null ? '' : String(Boolean(task.auto_downgrade));
@@ -689,7 +696,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (state.previewController) state.previewController.abort();
     const controller = new AbortController();
     state.previewController = controller;
-    state.rankingDetail = null;
+    state.discoveryDetail = null;
     show('preview-subscribe', false);
     text('preview-title', `${task.source_type === 'ranking' ? '排行榜预览' : '歌单预览'} · ${task.id}`);
     show('preview-loading', true);
@@ -1106,6 +1113,166 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function renderDiscoveryNavigation() {
+    const data = state.discovery;
+    show('discovery-playlists', data.mode === 'playlists');
+    show('discovery-rankings', data.mode === 'rankings');
+    document.querySelectorAll('#discovery-kind [data-kind]').forEach((button) => {
+      const active = button.dataset.kind === data.mode;
+      button.setAttribute('aria-selected', String(active));
+      button.tabIndex = active ? 0 : -1;
+    });
+    document.querySelectorAll('#discovery-platform [data-platform]').forEach((button) => {
+      button.setAttribute('aria-pressed', String(button.dataset.platform === data.platform));
+    });
+  }
+
+  function playlistSorts(catalog, category) {
+    return category && catalog.category_sorts?.length ? catalog.category_sorts : catalog.sorts;
+  }
+
+  function renderPlaylistControls() {
+    const data = state.discovery;
+    const catalog = data.catalog[data.platform];
+    const select = $('playlists-category');
+    const all = element('option', '', '全部分类'); all.value = '';
+    select.replaceChildren(all);
+    if (catalog) {
+      catalog.categories.forEach((category) => {
+        const group = element('optgroup'); group.label = category.name;
+        category.tags.forEach((tag) => {
+          const option = element('option', '', tag.name); option.value = tag.id;
+          group.append(option);
+        });
+        select.append(group);
+      });
+    }
+    select.value = data.category;
+    data.category = select.value;
+    select.disabled = !catalog || catalog.categories.every((category) => !category.tags.length);
+    const sorts = catalog ? playlistSorts(catalog, data.category) : [];
+    if (!sorts.some((item) => item.id === data.sort)) data.sort = sorts[0]?.id || '';
+    $('playlists-sort').replaceChildren(...sorts.map((item) => { const option = element('option', '', item.name); option.value = item.id; return option; }));
+    $('playlists-sort').value = data.sort;
+    $('playlists-sort').disabled = sorts.length < 2;
+  }
+
+  function renderPlaylists() {
+    const data = state.discovery;
+    const filter = data.filter.trim().toLocaleLowerCase();
+    const visible = data.items.filter((item) => !filter || `${item.name || ''} ${item.author || ''} ${(item.tags || []).join(' ')}`.toLocaleLowerCase().includes(filter));
+    show('playlists-loading', data.loading);
+    show('playlists-error', Boolean(data.error));
+    text('playlists-error-message', data.error);
+    show('playlists-empty', data.loaded && !data.loading && !data.error && visible.length === 0);
+    $('playlists-empty').querySelector('h3').textContent = filter ? '本页没有匹配的歌单' : '当前分类暂无歌单';
+    $('playlists-empty').querySelector('p').textContent = filter ? '尝试修改筛选词，或翻页查找。' : '尝试选择其他分类或排序。';
+    show('playlists-table', data.loaded && !data.loading && !data.error && visible.length > 0);
+    $('playlists-prev').disabled = data.loading || !data.loaded || Boolean(data.error) || data.page <= 1;
+    $('playlists-next').disabled = data.loading || !data.loaded || Boolean(data.error) || !data.hasMore || data.page >= 100;
+    text('playlists-summary', data.loading ? '正在读取歌单…' : data.error ? '读取失败，可重试' : data.loaded ? `第 ${number(data.page)} 页 · 本页 ${number(data.items.length)} 个${filter ? `，匹配 ${number(visible.length)} 个` : ''}${data.total >= 0 ? ` · 平台共 ${number(data.total)} 个` : ''}` : '等待读取歌单');
+    const platform = data.platform;
+    const rows = visible.map((item) => {
+      const row = element('tr');
+      const name = cell('歌单');
+      const layout = element('div', 'ranking-identity playlist-identity');
+      const artwork = element('span', 'playlist-icon playlist-artwork'); artwork.dataset.platform = platform; artwork.append(icon('list'));
+      if (item.cover_url) {
+        const image = element('img');
+        image.alt = ''; image.width = image.height = 48; image.loading = 'lazy'; image.decoding = 'async'; image.referrerPolicy = 'no-referrer';
+        image.addEventListener('error', () => image.remove(), { once: true });
+        image.src = item.cover_url; artwork.append(image);
+      }
+      const copy = element('div', 'task-name');
+      copy.append(element('div', 'cell-title', item.name));
+      if (item.tags?.length) copy.append(element('div', 'cell-subtitle playlist-tags', item.tags.slice(0, 3).join(' · ')));
+      layout.append(artwork, copy); name.append(layout);
+      const author = cell('作者'); author.textContent = item.author || '—';
+      const count = cell('歌曲数'); count.textContent = Number.isFinite(item.track_count) ? number(item.track_count) : '—';
+      const plays = cell('播放量'); plays.textContent = Number.isFinite(item.play_count) ? number(item.play_count) : '—';
+      const action = cell('操作');
+      const actions = element('div', 'ranking-row-actions');
+      actions.append(actionButton('详情', 'eye', 'button button-small button-secondary', (event) => openCollectionDetails(item, platform, 'playlist', event.currentTarget)), actionButton('订阅', 'plus', 'button button-small button-primary', (event) => subscribeCollection(item, platform, 'playlist', event.currentTarget)));
+      action.append(actions); row.append(name, author, count, plays, action);
+      return row;
+    });
+    $('playlists-body').replaceChildren(...rows);
+  }
+
+  function playlistPageKey(data, page) {
+    return JSON.stringify([data.platform, data.category, data.sort, page]);
+  }
+
+  async function loadPlaylists(page = state.discovery.page, force = false) {
+    const data = state.discovery;
+    if (data.controller) data.controller.abort();
+    data.requestedPage = page;
+    if (data.loaded && data.loadedKey === playlistPageKey(data, page) && !force) {
+      data.controller = null; data.loading = false; data.error = '';
+      renderPlaylists(); return;
+    }
+    const controller = new AbortController();
+    data.controller = controller;
+    data.loading = true; data.error = '';
+    const platform = data.platform;
+    const current = () => data.controller === controller && !controller.signal.aborted;
+    renderDiscoveryNavigation();
+    renderPlaylists();
+    try {
+      if (!data.catalog[platform] || force) {
+        const query = new URLSearchParams({ platform });
+        if (force) query.set('refresh', '1');
+        const response = await request(`/api/playlists/catalog?${query}`, { signal: controller.signal, timeout: 120000 });
+        if (!current()) return;
+        const catalog = response?.catalog;
+        if (!catalog || !Array.isArray(catalog.categories) || !Array.isArray(catalog.sorts) || !catalog.sorts.length) throw new Error('歌单服务返回了无法识别的分类。');
+        data.catalog[platform] = catalog;
+      }
+      renderPlaylistControls();
+      const key = playlistPageKey(data, page);
+      const query = new URLSearchParams({ platform, category: data.category, sort: data.sort, page: String(page) });
+      const response = await request(`/api/playlists?${query}`, { signal: controller.signal, timeout: 120000 });
+      if (!current()) return;
+      const result = response?.playlists;
+      if (!result || !Array.isArray(result.items) || result.page !== page || typeof result.has_more !== 'boolean') throw new Error('歌单服务返回了无法识别的列表。');
+      data.items = result.items; data.page = page; data.total = Number.isFinite(result.total) ? result.total : -1;
+      data.hasMore = result.has_more; data.loaded = true; data.loadedKey = key;
+    } catch (error) {
+      if (current() && error.name !== 'AbortError') data.error = error.message;
+    } finally {
+      if (data.controller === controller) {
+        data.controller = null; data.loading = false;
+        renderPlaylists();
+      }
+    }
+  }
+
+  function loadDiscovery(force = false) {
+    renderDiscoveryNavigation();
+    return state.discovery.mode === 'playlists' ? loadPlaylists(state.discovery.page, force) : loadRankings(state.discovery.platform, force);
+  }
+
+  function selectDiscoveryMode(mode) {
+    if (mode !== 'playlists' && mode !== 'rankings') return;
+    state.discovery.mode = mode;
+    const previous = mode === 'playlists' ? state.rankings : state.discovery;
+    if (previous.controller) previous.controller.abort();
+    previous.controller = null; previous.loading = false;
+    loadDiscovery();
+  }
+
+  function selectDiscoveryPlatform(platform) {
+    if (!Object.hasOwn(platforms, platform) || platform === state.discovery.platform) return;
+    for (const data of [state.discovery, state.rankings]) {
+      if (data.controller) data.controller.abort();
+      data.controller = null; data.loading = false; data.platform = platform; data.category = ''; data.filter = ''; data.error = '';
+    }
+    Object.assign(state.discovery, { sort: '', page: 1, items: [], loaded: false, loadedKey: '' });
+    $('playlists-filter').value = ''; $('rankings-filter').value = '';
+    renderPlaylistControls(); renderPlaylists();
+    loadDiscovery();
+  }
+
   function rankingItems() {
     const data = state.rankings;
     const catalog = data.catalog[data.platform];
@@ -1144,10 +1311,8 @@ document.addEventListener('DOMContentLoaded', () => {
     text('rankings-summary', data.catalog[data.platform] ? `共 ${number(items.length)} 个榜单${visible.length !== items.length ? `，筛选后 ${number(visible.length)} 个` : ''}` : '等待读取榜单');
     const fetchedAt = data.catalog[data.platform] && data.catalog[data.platform].fetchedAt;
     text('rankings-fetched-at', fetchedAt ? `更新于 ${date(fetchedAt, true)}` : '—');
-    document.querySelectorAll('#rankings-platform [data-platform]').forEach((button) => {
-      const active = button.dataset.platform === data.platform;
-      button.setAttribute('aria-selected', String(active));
-    });
+    renderDiscoveryNavigation();
+    const platform = data.platform;
     const rows = visible.map((item) => {
       const row = element('tr');
       const name = cell('榜单');
@@ -1159,8 +1324,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const frequency = cell('更新频率'); frequency.textContent = item.update_frequency || '—';
       const action = cell('操作');
       const actions = element('div', 'ranking-row-actions');
-      const details = actionButton('详情', 'eye', 'button button-small button-secondary', (event) => openRankingDetails(item, event.currentTarget));
-      const subscribe = actionButton('订阅', 'plus', 'button button-small button-primary', (event) => subscribeRanking(item, event.currentTarget));
+      const details = actionButton('详情', 'eye', 'button button-small button-secondary', (event) => openCollectionDetails(item, platform, 'ranking', event.currentTarget));
+      const subscribe = actionButton('订阅', 'plus', 'button button-small button-primary', (event) => subscribeCollection(item, platform, 'ranking', event.currentTarget));
       actions.append(details, subscribe); action.append(actions); row.append(name, count, frequency, action);
       return row;
     });
@@ -1188,10 +1353,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const query = new URLSearchParams({ platform });
       if (force) query.set('refresh', '1');
       const response = await request(`/api/rankings?${query.toString()}`, { signal: controller.signal, timeout: 120000 });
+      if (state.rankings.controller !== controller || controller.signal.aborted) return;
       if (!response || !Array.isArray(response.rankings)) throw new Error('排行榜服务返回了无法识别的目录。');
       state.rankings.catalog[platform] = { items: response.rankings, fetchedAt: response.fetched_at };
     } catch (error) {
-      if (error.name !== 'AbortError') state.rankings.error = error.message;
+      if (state.rankings.controller === controller && !controller.signal.aborted && error.name !== 'AbortError') state.rankings.error = error.message;
     } finally {
       if (state.rankings.controller === controller) {
         state.rankings.controller = null;
@@ -1201,20 +1367,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function subscribeRanking(item, trigger) {
-    openTask(null, trigger, { platform: state.rankings.platform, sourceType: 'ranking', sourceId: String(item.id) });
+  function subscribeCollection(item, platform, sourceType, trigger) {
+    openTask(null, trigger, { platform, sourceType, sourceId: String(item.id) });
   }
 
-  async function openRankingDetails(item, trigger) {
+  async function openCollectionDetails(item, platform, sourceType, trigger) {
     if (state.previewController) state.previewController.abort();
     const controller = new AbortController();
     state.previewController = controller;
-    state.rankingDetail = item;
-    text('preview-title', item.name || '排行榜详情');
-    text('preview-summary', `${platforms[state.rankings.platform]} · ${item.update_frequency || '更新频率未知'}`);
+    const selected = { item, platform, sourceType };
+    state.discoveryDetail = selected;
+    const ranking = sourceType === 'ranking';
+    const description = ranking ? item.update_frequency || '更新频率未知' : item.author || '公开歌单';
+    text('preview-title', item.name || (ranking ? '排行榜详情' : '歌单详情'));
+    text('preview-summary', `${platforms[platform]} · ${description}`);
     text('preview-source', '平台直连');
     $('preview-source').className = 'status-badge status-success';
-    text('preview-limit-note', '按平台排名顺序展示榜单曲目。');
+    text('preview-limit-note', ranking ? '按平台排名顺序展示榜单曲目。' : '按歌单原始顺序展示曲目。');
+    text('preview-subscribe-label', ranking ? '订阅排行榜' : '订阅歌单');
     show('preview-subscribe', true);
     show('preview-loading', true);
     show('preview-content', false);
@@ -1222,13 +1392,13 @@ document.addEventListener('DOMContentLoaded', () => {
     $('preview-body').replaceChildren();
     openDialog('preview-dialog', trigger);
     try {
-      const path = `/api/rankings/${encodeURIComponent(state.rankings.platform)}/${encodeURIComponent(item.id)}`;
+      const path = `/api/${ranking ? 'rankings' : 'playlists'}/${encodeURIComponent(platform)}/${encodeURIComponent(item.id)}`;
       const detail = await request(path, { signal: controller.signal, timeout: 120000 });
-      if (controller.signal.aborted || state.rankingDetail !== item) return;
-      if (!detail || !Array.isArray(detail.tracks)) throw new Error('排行榜服务返回了无法识别的曲目列表。');
+      if (controller.signal.aborted || state.discoveryDetail !== selected) return;
+      if (!detail || !Array.isArray(detail.tracks)) throw new Error('平台服务返回了无法识别的曲目列表。');
       const reported = Number.isFinite(detail.reported_count) ? detail.reported_count : detail.tracks.length;
-      text('preview-title', detail.name || item.name || '排行榜详情');
-      text('preview-summary', `${platforms[state.rankings.platform]} · ${item.update_frequency || '更新频率未知'} · 共 ${number(reported)} 首`);
+      text('preview-title', detail.name || item.name || (ranking ? '排行榜详情' : '歌单详情'));
+      text('preview-summary', `${platforms[platform]} · ${description} · 共 ${number(reported)} 首`);
       const rows = detail.tracks.map((track) => {
         const row = element('tr');
         const song = cell('歌曲');
@@ -1243,7 +1413,7 @@ document.addEventListener('DOMContentLoaded', () => {
       show('preview-empty', rows.length === 0);
       show('preview-content', true);
     } catch (error) {
-      if (error.name !== 'AbortError') { text('preview-error', error.message); show('preview-error', true); }
+      if (state.discoveryDetail === selected && !controller.signal.aborted && error.name !== 'AbortError') { text('preview-error', error.message); show('preview-error', true); }
     } finally {
       if (state.previewController === controller) { state.previewController = null; show('preview-loading', false); }
     }
@@ -1778,7 +1948,9 @@ document.addEventListener('DOMContentLoaded', () => {
   function route() {
     if (!state.authenticated) return;
     const requested = window.location.hash.slice(1) || 'overview';
-    const next = Object.hasOwn(titles, requested) ? requested : 'overview';
+    const legacyRankings = requested === 'rankings';
+    const next = legacyRankings ? 'discover' : Object.hasOwn(titles, requested) ? requested : 'overview';
+    if (legacyRankings) state.discovery.mode = 'rankings';
     if (requested !== next) history.replaceState(null, '', `#${next}`);
     document.querySelectorAll('[data-view]').forEach((view) => { view.hidden = view.dataset.view !== next; });
     document.querySelectorAll('[data-nav]').forEach((link) => {
@@ -1790,7 +1962,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const changed = previous && next !== previous;
     state.route = next;
     if (changed) { $(`${next}-title`).focus({ preventScroll: true }); window.scrollTo({ top: 0, behavior: 'instant' }); }
-    if (next === 'rankings') loadRankings(state.rankings.platform);
+    if (previous === 'discover' && next !== 'discover') {
+      for (const data of [state.discovery, state.rankings]) {
+        if (data.controller) data.controller.abort();
+        data.controller = null; data.loading = false;
+      }
+    }
+    if (next === 'discover') loadDiscovery();
     if (previous === 'audio' && next !== 'audio' && state.audio.controller) state.audio.controller.abort();
     if (next === 'audio' && previous !== 'audio') loadAudio();
     if (['cloud115', 'navidrome'].includes(next) && previous !== next) loadCloud();
@@ -1881,21 +2059,36 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('rankings-filter').addEventListener('input', (event) => { state.rankings.filter = event.target.value; renderRankings(); });
   $('rankings-category').addEventListener('change', (event) => { state.rankings.category = event.target.value; renderRankings(); });
-  document.querySelectorAll('#rankings-platform [data-platform]').forEach((button) => button.addEventListener('click', () => loadRankings(button.dataset.platform)));
-  $('rankings-refresh').addEventListener('click', async (event) => {
-    await busyButton(event.currentTarget, '', () => loadRankings(state.rankings.platform, true));
+  document.querySelectorAll('#discovery-platform [data-platform]').forEach((button) => button.addEventListener('click', () => selectDiscoveryPlatform(button.dataset.platform)));
+  document.querySelectorAll('#discovery-kind [data-kind]').forEach((button) => button.addEventListener('click', () => selectDiscoveryMode(button.dataset.kind)));
+  $('discovery-kind').addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const buttons = [...$('discovery-kind').querySelectorAll('[data-kind]')];
+    const index = buttons.findIndex((button) => button.dataset.kind === state.discovery.mode);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowLeft' ? -1 : 1) + buttons.length) % buttons.length;
+    event.preventDefault();
+    buttons[next].focus(); selectDiscoveryMode(buttons[next].dataset.kind);
   });
+  $('playlists-category').addEventListener('change', (event) => {
+    state.discovery.category = event.target.value; state.discovery.page = 1;
+    renderPlaylistControls(); loadPlaylists(1);
+  });
+  $('playlists-sort').addEventListener('change', (event) => { state.discovery.sort = event.target.value; state.discovery.page = 1; loadPlaylists(1); });
+  $('playlists-filter').addEventListener('input', (event) => { state.discovery.filter = event.target.value; renderPlaylists(); });
+  $('playlists-prev').addEventListener('click', () => { if (state.discovery.page > 1) loadPlaylists(state.discovery.page - 1); });
+  $('playlists-next').addEventListener('click', () => { if (state.discovery.hasMore && state.discovery.page < 100) loadPlaylists(state.discovery.page + 1); });
+  $('discovery-refresh').addEventListener('click', (event) => busyButton(event.currentTarget, '', () => loadDiscovery(true)));
+  $('playlists-retry').addEventListener('click', () => loadPlaylists(state.discovery.requestedPage || state.discovery.page, true));
   $('rankings-retry').addEventListener('click', () => loadRankings(state.rankings.platform, true));
   $('preview-subscribe').addEventListener('click', (event) => {
-    const item = state.rankingDetail;
-    if (!item) return;
-    const trigger = event.currentTarget;
-    const platform = state.rankings.platform;
-    state.rankingDetail = null;
+    const selected = state.discoveryDetail;
+    if (!selected) return;
+    const trigger = state.dialogTriggers.get('preview-dialog') || event.currentTarget;
+    state.discoveryDetail = null;
     state.dialogTriggers.delete('preview-dialog');
     if ($('preview-dialog').open) $('preview-dialog').close();
     if (state.previewController) { state.previewController.abort(); state.previewController = null; }
-    openTask(null, trigger, { platform, sourceType: 'ranking', sourceId: String(item.id) });
+    subscribeCollection(selected.item, selected.platform, selected.sourceType, trigger);
   });
   $('run-all-button').addEventListener('click', async (event) => {
     state.busy.add('run-all');
@@ -1914,7 +2107,7 @@ document.addEventListener('DOMContentLoaded', () => {
     dialog.addEventListener('close', () => {
       if (dialog.id === 'preview-dialog') {
         if (state.previewController) { state.previewController.abort(); state.previewController = null; }
-        state.rankingDetail = null;
+        state.discoveryDetail = null;
         show('preview-subscribe', false);
       }
       const trigger = state.dialogTriggers.get(dialog.id);
@@ -1932,6 +2125,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (state.previewController) state.previewController.abort();
     if (state.search.controller) state.search.controller.abort();
     if (state.rankings.controller) state.rankings.controller.abort();
+    if (state.discovery.controller) state.discovery.controller.abort();
     if (state.audio.controller) state.audio.controller.abort();
     if (state.cloud.controller) state.cloud.controller.abort();
     cancelCloudLogin();
@@ -1946,7 +2140,7 @@ document.addEventListener('DOMContentLoaded', () => {
     state.route = '';
     ++state.overviewVersion;
     clearTimeout(state.pollTimer);
-    for (const controller of [state.overviewController, state.previewController, state.search.controller, state.rankings.controller, state.audio.controller, state.cloud.controller]) if (controller) controller.abort();
+    for (const controller of [state.overviewController, state.previewController, state.search.controller, state.rankings.controller, state.discovery.controller, state.audio.controller, state.cloud.controller]) if (controller) controller.abort();
     state.overviewPromise = null;
     cancelCloudLogin();
     document.querySelectorAll('dialog[open]').forEach((dialog) => dialog.close());
