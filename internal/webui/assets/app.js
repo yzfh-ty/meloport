@@ -1539,13 +1539,15 @@ document.addEventListener('DOMContentLoaded', () => {
     text('cloud-auth-status', connection[0]);
     $('cloud-auth-status').className = `status-badge status-${connection[1]}`;
     text('cloud-auth-note', data.account?.name ? `账号：${data.account.name}` : connected
-      ? '授权已配置，可浏览网盘并选择目标文件夹。'
-      : '使用手机端 115 App 扫码，登录后可浏览并选择目标文件夹。');
+      ? '授权已配置，可选择目标文件夹。'
+      : '使用 115 App 扫码后，可选择目标文件夹。');
     show('cloud-login', Boolean(data.login_available) && !data.session_authenticated);
     show('cloud-setup-link', !active && connected && !data.restart_required);
     show('cloud-logout', data.session_authenticated);
     show('cloud-check', active && connected);
     show('cloud-counts', active);
+    show('cloud-reconcile', active);
+    show('cloud-export-description', active);
     show('cloud-restart', data.restart_required);
     $('cloud-login').disabled = !data.login_available || Boolean(operation);
     $('cloud-logout').disabled = Boolean(operation);
@@ -1554,7 +1556,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('cloud-fields').disabled = operation === 'save';
     $('cloud-save').disabled = Boolean(operation) || !dirty;
     renderCloudOptions();
-    text('cloud-settings-note', dirty ? '有未保存的更改。' : '设置保存后，在下次启动时生效。');
+    text('cloud-settings-note', dirty ? '有未保存的更改。' : '保存后需重启服务生效。');
     for (const key of ['pending', 'confirmed', 'exported']) text(`cloud-${key}`, number(data.stats?.[key]));
     renderCloudFiles();
     renderNavidrome();
@@ -1671,6 +1673,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!data) return;
     const navidromeEnabled = $('navidrome-enabled').checked;
     const mediaEnabled = $('navidrome-media-enabled').checked;
+    const needsMedia = navidromeEnabled && !mediaEnabled;
+    text('navidrome-media-enable-hint', needsMedia ? '接入 Navidrome 需要开启此端口。' : '供 Navidrome 与 STRM 播放使用。');
+    $('navidrome-media-enable-hint').classList.toggle('field-error', needsMedia);
     $('navidrome-fields').disabled = operation === 'save';
     $('navidrome-save').disabled = Boolean(operation) || !state.navidrome.dirty;
     $('navidrome-integration-fields').disabled = !navidromeEnabled;
@@ -1683,10 +1688,10 @@ document.addEventListener('DOMContentLoaded', () => {
     text('navidrome-runtime-status', status[0]);
     $('navidrome-runtime-status').className = `status-badge status-${status[1]}`;
     show('navidrome-restart', data.restart_required);
-    text('navidrome-settings-note', state.navidrome.dirty ? '有未保存的更改。' : '设置保存后，在下次启动时生效。');
+    text('navidrome-settings-note', state.navidrome.dirty ? '有未保存的更改。' : '保存后需重启服务生效。');
     text('navidrome-media-runtime', data.media_runtime_enabled
-      ? '播放入口已启动。更改此处设置后，需重启服务生效。'
-      : '播放入口未启动。开启并保存后，重启服务生效。');
+      ? data.settings.media_enabled ? '媒体端口已启动。' : '重启后关闭媒体端口。'
+      : data.settings.media_enabled ? '媒体端口待重启。' : '媒体端口未启动。');
   }
 
   function renderCloudFiles() {
@@ -1717,7 +1722,8 @@ document.addEventListener('DOMContentLoaded', () => {
       ? connected ? '运行订阅任务，待 CloudDrive2 完成上传后即可生成。'
         : data.stats?.confirmed > 0 ? '已有确认的音频，可先修复 STRM；核对新的 CloudDrive2 上传需先登录。'
           : '先扫码登录，再核对 CloudDrive2 已上传的音频。'
-      : '当前仅下载到本地。需要 CloudDrive2 上传和 STRM 时再开启 115 交接。');
+      : data.settings.enabled ? '交接设置已开启，重启服务后开始导出。'
+        : '交接尚未启用。开启上方设置后，可核对上传并生成 STRM。');
     $('cloud-empty').classList.toggle('cloud-empty-setup', !data.runtime_enabled);
     show('cloud-pagination', lastPage > 0 || Boolean(data.files_truncated));
     text('cloud-file-count', `${start + 1}–${start + rows.length} / ${files.length} 条记录${data.files_truncated ? '（仅显示前 100 条）' : ''}`);
@@ -1817,7 +1823,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!state.cloud.data || state.cloud.operation) return;
     const settings = readCloudSettings(event.currentTarget, state.cloud.data.settings);
     if (settings.navidrome_enabled && !settings.media_enabled) {
-      cloudFeedback('navidrome-settings-error', '接入 Navidrome 时，请同时开启独立媒体端口。');
+      cloudFeedback('navidrome-settings-error', '');
       $('navidrome-media-enabled').focus();
       return;
     }
