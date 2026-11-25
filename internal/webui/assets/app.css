@@ -392,9 +392,7 @@ fieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
   padding: 12px var(--panel-pad);
   border-top: 1px solid var(--line);
 }
-.integration-view { --integration-gap: 24px; --integration-label-width: 160px; width: 100%; max-width: 880px; margin-inline: auto; }
-.integration-view h1 { font-size: 1.625rem; font-weight: 600; }
-.integration-view .page-heading { margin-bottom: 20px; }
+.integration-view { --integration-gap: 24px; --integration-label-width: 160px; --integration-field-width: 64rem; }
 .integration-view .panel-heading h2 { font-weight: 600; }
 .integration-view .panel-heading p { font-size: .875rem; line-height: 1.6; }
 .integration-view .button { font-weight: 500; }
@@ -405,7 +403,7 @@ fieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
 .integration-panel .panel-heading p { margin-top: 4px; }
 .integration-panel .integration-form { padding-block: var(--integration-gap); }
 .integration-form > fieldset { display: grid; gap: 28px; }
-.integration-switches { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--integration-gap); }
+.integration-switches { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: calc(var(--integration-label-width) + var(--integration-gap) + var(--integration-field-width)); gap: var(--integration-gap); }
 .integration-switches-single { grid-template-columns: minmax(0, 1fr); }
 .integration-form .checkbox-field strong { font-weight: 500; }
 .integration-form .checkbox-field small, .integration-form .field-hint { font-size: .875rem; line-height: 1.6; }
@@ -420,18 +418,20 @@ fieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
 .integration-group { display: grid; grid-template-columns: var(--integration-label-width) minmax(0, 1fr); gap: var(--integration-gap); }
 .integration-group-heading h3 { font-weight: 600; }
 .integration-group-heading p { margin-top: 6px; color: var(--muted); font-size: .875rem; line-height: 1.6; }
-.integration-group-fields, .integration-stack { display: grid; align-content: start; gap: 20px; }
+.integration-group-fields, .integration-stack { display: grid; min-width: 0; align-content: start; gap: 20px; }
+.integration-group-fields { width: 100%; max-width: var(--integration-field-width); }
 .integration-group-fields .field { margin: 0; gap: 6px; }
+.integration-group-fields .integration-field-short { width: 100%; max-width: 40rem; }
+.integration-form .field-hint { max-width: 72ch; }
 .integration-form .field > label { font-weight: 500; }
 .integration-form input:not([type="checkbox"]) { font-size: .9375rem; }
 .integration-option { margin: 0; }
-.integration-help { margin-top: 20px; margin-left: calc(var(--integration-label-width) + var(--integration-gap)); }
+.integration-help { max-width: 72ch; margin-top: 20px; margin-left: calc(var(--integration-label-width) + var(--integration-gap)); }
 .integration-help > summary { width: fit-content; min-height: 44px; padding-block: 10px; color: var(--accent); font-size: .875rem; font-weight: 500; cursor: pointer; }
 .integration-help > div { display: grid; gap: 8px; padding-block: 4px 8px; color: var(--muted); font-size: .875rem; line-height: 1.6; }
 .integration-form .form-error-summary { margin-top: 16px; }
 .integration-panel .form-footer { margin-top: 20px; padding-top: 18px; }
 @container (max-width: 720px) {
-  .integration-view h1 { font-size: 1.5rem; }
   .integration-switches, .integration-group { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .integration-help { margin-left: 0; }
   .integration-form input:not([type="checkbox"]) { font-size: 1rem; }
